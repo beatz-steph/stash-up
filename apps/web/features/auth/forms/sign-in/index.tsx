@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { Form } from "@workspace/ui/components/form"
-import { FormInput } from "@workspace/ui/components/form-input"
+import { FormInput } from "@workspace/ui/form/input"
 import { useSignInForm } from "./model"
 
 export function SignInForm() {

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Control, FieldPath, FieldValues, ControllerRenderProps } from "react-hook-form"
-import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "./form.js"
-import { Input } from "./input.js"
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@workspace/ui/components/form"
+import { Input } from "@workspace/ui/components/input"
 
 interface FormInputProps<
   TFieldValues extends FieldValues = FieldValues,
