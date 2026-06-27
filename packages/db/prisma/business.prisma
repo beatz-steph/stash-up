@@ -1,0 +1,316 @@
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum AdminRole {
+  SUPER_ADMIN
+  SUPPORT
+}
+
+enum CircleStatus {
+  FORMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CircleCancelReason {
+  DEADLINE_NOT_MET    // auto-cancelled: totalSlots never filled by startDeadline
+  CREATOR_CANCELLED   // creator manually cancelled while still FORMING
+}
+
+enum Frequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+enum MemberRole {
+  CREATOR   // has circle management permissions (still has a payout position)
+  MEMBER
+}
+
+enum VAProvisionStatus {
+  PENDING       // membership exists, VA not yet provisioned (circle still FORMING)
+  PROVISIONED   // VA created successfully
+  FAILED        // Nomba call failed — blocks circle activation until retried or member replaced
+}
+
+enum MemberStatus {
+  ACTIVE
+  SUSPENDED     // defaulted too many times — payout skipped until arrears cleared
+  DEFAULTED     // permanently removed from circle
+  LEFT          // left before circle became ACTIVE (cannot leave mid-cycle)
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED    // creator withdrew the invite
+}
+
+enum VAStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum CycleStatus {
+  OPEN
+  COLLECTING
+  AWAITING_RESOLUTION   // deadline passed, not all contributions complete
+  READY_TO_PAYOUT
+  PAYOUT_INITIATED
+  PAID_OUT
+  CLOSED
+  CANCELLED
+}
+
+enum ContributionStatus {
+  PENDING
+  PARTIAL
+  COMPLETE
+  DEFAULTED    // deadline passed and never completed
+}
+
+enum MatchStatus {
+  MATCHED
+  OVERPAID
+  UNDERPAID
+  UNMATCHED
+  MANUAL
+}
+
+enum PayoutStatus {
+  INITIATED
+  PENDING_BILLING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum ConfigStatus {
+  ACTIVE
+  INVALID
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model Circle {
+  id                  String              @id @default(cuid())
+  name                String
+  contributionMinor   Int                 // per-member per-cycle (kobo)
+  currency            String              @default("NGN")
+  frequency           Frequency
+  status              CircleStatus        @default(FORMING)
+  cancelledReason     CircleCancelReason?
+  totalSlots          Int                 // fixed at creation, never changes
+  startDeadline       DateTime?           // if not full by this date → CANCELLED
+  currentCycleSeq     Int                 @default(0)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  createdByUserId     String
+  createdBy           User                @relation("CircleCreator", fields: [createdByUserId], references: [id])
+
+  memberships         Membership[]
+  cycles              Cycle[]
+  invites             CircleInvite[]
+
+  @@index([status])
+  @@index([createdByUserId])
+}
+
+model CircleInvite {
+  id              String       @id @default(cuid())
+  circleId        String
+  circle          Circle       @relation(fields: [circleId], references: [id])
+  invitedUserId   String       // must be a registered user — looked up by @username
+  invitedUser     User         @relation("InvitedUser", fields: [invitedUserId], references: [id])
+  invitedByUserId String       // the circle creator
+  invitedBy       User         @relation("InvitedBy", fields: [invitedByUserId], references: [id])
+  status          InviteStatus @default(PENDING)
+  expiresAt       DateTime     // after this → auto-EXPIRED, slot freed
+  createdAt       DateTime     @default(now())
+
+  @@unique([circleId, invitedUserId])   // no duplicate invites to same person
+  @@index([invitedUserId, status])
+  @@index([circleId, status])
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  circleId       String
+  circle         Circle       @relation(fields: [circleId], references: [id])
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  role              MemberRole        @default(MEMBER)
+  payoutPosition    Int               // 1..N rotation order, set by creator at circle creation
+  status            MemberStatus      @default(ACTIVE)
+  vaProvisionStatus VAProvisionStatus @default(PENDING)  // tracks VA provisioning at activation
+  bufferMinor       Int               @default(0)   // accumulated surplus/partial across cycles
+  defaultCount      Int               @default(0)   // cycles this member has defaulted on
+  joinedAt          DateTime          @default(now())
+
+  virtualAccount  VirtualAccount?
+  contributions   Contribution[]
+  payoutsReceived Payout[]        @relation("RecipientMembership")
+  recipientCycles Cycle[]         @relation("RecipientMembership")
+
+  @@unique([circleId, userId])
+  @@unique([circleId, payoutPosition])
+  @@index([circleId])
+  @@index([userId])
+}
+
+model VirtualAccount {
+  id                  String     @id @default(cuid())
+  membershipId        String     @unique
+  membership          Membership @relation(fields: [membershipId], references: [id])
+  provider            String     @default("NOMBA")
+  // accountRef is our reference sent to Nomba at VA creation — webhook lookup key
+  accountRef          String     @unique   // = "membership_{membershipId}"
+  providerAccountRef  String               // Nomba's own VA id (for suspend/manage calls)
+  bankAccountNumber   String               // issued by Nomba — shown to member for transfers
+  bankAccountName     String
+  bankName            String
+  bankCode            String               // NIBSS bank code — needed for Transfers API payout
+  status              VAStatus   @default(ACTIVE)
+  createdAt           DateTime   @default(now())
+
+  inboundTransfers    InboundTransfer[]
+
+  @@index([accountRef])
+  @@index([bankAccountNumber])
+}
+
+model Cycle {
+  id                    String      @id @default(cuid())
+  circleId              String
+  circle                Circle      @relation(fields: [circleId], references: [id])
+  sequence              Int                          // 1..N
+  recipientMembershipId String
+  recipientMembership   Membership  @relation("RecipientMembership", fields: [recipientMembershipId], references: [id])
+  status                CycleStatus @default(OPEN)
+  potExpectedMinor      Int                          // contributionMinor × activeMembers
+  potCollectedMinor     Int         @default(0)
+  deadline              DateTime                     // auto-set from Circle.frequency at cycle open
+  openedAt              DateTime    @default(now())
+  paidOutAt             DateTime?
+
+  contributions         Contribution[]
+  payout                Payout?
+  inboundTransfers      InboundTransfer[] @relation("MatchedCycle")
+
+  @@unique([circleId, sequence])
+  @@index([circleId, status])
+}
+
+model Contribution {
+  id           String             @id @default(cuid())
+  cycleId      String
+  cycle        Cycle              @relation(fields: [cycleId], references: [id])
+  membershipId String
+  membership   Membership         @relation(fields: [membershipId], references: [id])
+  amountMinor  Int                @default(0)   // running total accumulated this cycle
+  status       ContributionStatus @default(PENDING)
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([cycleId, membershipId])
+  @@index([cycleId])
+  @@index([membershipId])
+}
+
+model InboundTransfer {
+  id                  String      @id @default(cuid())
+  provider            String      @default("NOMBA")
+  // providerEventId = webhook.requestId (top-level) — NOT data.transaction.transactionId
+  providerEventId     String
+  nombaTransactionId  String               // data.transaction.transactionId
+  aliasAccountRef     String               // data.transaction.aliasAccountReference → VirtualAccount.accountRef
+  virtualAccountId    String
+  virtualAccount      VirtualAccount @relation(fields: [virtualAccountId], references: [id])
+  amountMinor         Int                  // transactionAmount × 100 (stored in kobo)
+  currency            String      @default("NGN")
+  senderName          String?
+  senderBank          String?
+  senderBankCode      String?
+  senderAccountNumber String?
+  narration           String?
+  matchStatus         MatchStatus
+  matchedCycleId      String?
+  matchedCycle        Cycle?      @relation("MatchedCycle", fields: [matchedCycleId], references: [id])
+  matchedMembershipId String?
+  receivedAt          DateTime
+
+  @@unique([provider, providerEventId])
+  @@index([aliasAccountRef])
+  @@index([matchStatus])
+  @@index([receivedAt])
+}
+
+model Payout {
+  id                     String       @id @default(cuid())
+  cycleId                String       @unique          // DB-level double-payout guard
+  cycle                  Cycle        @relation(fields: [cycleId], references: [id])
+  recipientMembershipId  String
+  recipientMembership    Membership   @relation("RecipientMembership", fields: [recipientMembershipId], references: [id])
+  amountMinor            Int
+  // merchantTxRef = "payout_{cycleId}" — deterministic idempotency key sent to Nomba
+  merchantTxRef          String       @unique
+  nombaTransferId        String?
+  nombaStatus            String?
+  recipientAccountNumber String
+  recipientBankCode      String
+  recipientBankName      String
+  recipientAccountName   String
+  status                 PayoutStatus @default(INITIATED)
+  failureReason          String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+}
+
+model WebhookReceipt {
+  id              String    @id @default(cuid())
+  provider        String    @default("NOMBA")
+  // providerEventId = webhook.requestId (top-level) — dedup key
+  providerEventId String
+  eventType       String    // payment_success | payout_success | etc.
+  payloadHash     String    // sha256(rawBody)
+  signatureValid  Boolean
+  processed       Boolean   @default(false)
+  processedAt     DateTime?
+  processingError String?
+  rawPayload      String    @db.Text
+  createdAt       DateTime  @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([processed, createdAt])
+  @@index([eventType])
+}
+
+model NombaConfig {
+  id                  String       @id @default(cuid())
+  provider            String       @default("NOMBA")
+  clientId            String
+  clientSecretCipher  String       @db.Text   // encrypted; env-scoped ok for sandbox
+  webhookSecretCipher String       @db.Text
+  baseUrl             String       @default("https://api.nomba.com")
+  status              ConfigStatus @default(ACTIVE)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model AdminAuditLog {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id])
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([adminUserId])
+  @@index([entityType, entityId])
+  @@map("admin_audit_logs")
+}
