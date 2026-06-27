@@ -1,97 +1,192 @@
-# CLAUDE.md — Project Agent Setup
+# CLAUDE.md — Stashup (Ajo/Esusu Digital Thrift App)
 
 ## Project Overview
 
-_Replace this section with your project description._
+**Stashup** is a digital Ajo/Esusu platform (rotating savings circle / ROSCA) built on Nomba Virtual Accounts for the Nomba × DevCareer Hackathon 2026.
 
-Multi-service monorepo with NestJS backends, Next.js frontends, Prisma ORM, Better Auth, and auto-generated OpenAPI clients. pnpm workspaces.
+**Stack:** Two full-stack Next.js 15 apps (App Router), Neon PostgreSQL, Prisma 7, BetterAuth, Vercel. No separate backend service — API routes and server actions live inside each Next.js app.
+
+**Deadline:** 11:59 PM WAT, 7 July 2026.
+
+---
 
 ## Agent Team
 
-This project uses a specialized multi-agent team. Each agent has deep domain expertise and follows strict conventions.
-
-### Agent Roster
-
 | Agent | Role | Trigger |
 |-------|------|---------|
-| `tech-lead` | Orchestrator — decomposes, delegates, reviews. Also owns schema/DB design. | Complex/cross-cutting tasks, ambiguous requirements, full feature builds, new models, migrations |
-| `backend-engineer` | NestJS services implementation | Modules, endpoints, DTOs, services, business logic, Prisma queries |
-| `frontend-engineer` | Next.js apps implementation | Feature folders, forms, tables, queries, mutations, components |
-| `qa-engineer` | Testing + security review | Writing tests, fixing broken tests, access control audits, security review |
+| `tech-lead` | Orchestrator — decomposes, delegates, reviews. Also owns schema/DB design. | Complex/cross-cutting tasks, ambiguous requirements, full feature builds, schema changes |
+| `backend-engineer` | Next.js API routes, server actions, Prisma queries, business logic | Route handlers, server actions, webhook handler, reconciliation engine, payout logic |
+| `frontend-engineer` | Next.js client UI — features, forms, mutations, queries, components | Feature folders, forms, tables, client components, React Query hooks |
+| `qa-engineer` | Testing + security review | Business logic tests, security review of routes/actions, access control audits |
 
 ### Routing Rules
 
-**Single-domain tasks → direct to specialist:**
-- "Add a new endpoint" → `backend-engineer`
-- "Build a feature table UI" → `frontend-engineer`
-- "Write tests for a service" → `qa-engineer`
-- "Is this endpoint secure?" → `qa-engineer`
-- "Add a DB index" → `tech-lead`
-- "Review the code I just wrote" → `qa-engineer`
+- "Build the webhook handler" → `backend-engineer`
+- "Build the circle dashboard UI" → `frontend-engineer`
+- "Write tests for reconciliation" → `qa-engineer`
+- "Build circle creation end-to-end (schema + API + UI)" → `tech-lead`
+- "Is this server action secure?" → `qa-engineer`
 
-**Cross-cutting tasks → tech-lead orchestrates:**
-- "Build a feature end-to-end" → `tech-lead`
-- "I need help but I'm not sure where to start" → `tech-lead`
+---
 
-## Tech Stack
+## Architecture
 
-- **Backend:** NestJS 10, Prisma 7, PostgreSQL, Better Auth, class-validator, Swagger
-- **Frontend:** Next.js (App Router), React 19, TailwindCSS 4, TanStack Query 5, React Hook Form, Zod
-- **Monorepo:** pnpm workspaces
-
-## Monorepo Layout
-
-_Update paths to match your project. The structure below is the expected convention._
+Two full-stack Next.js apps sharing one Prisma DB package and one UI package. **No NestJS. No separate backend service.**
 
 ```
-<project>/
-├── apps/<dashboard>/          — Next.js primary app (e.g. admin dashboard)
-├── apps/<client>/             — Next.js secondary app (e.g. customer-facing) [optional]
-├── services/<api>/            — NestJS primary backend
-├── services/<bff>/            — NestJS BFF for secondary app [optional]
-├── packages/ui/               — Shared UI components
-├── packages/<api>-client/     — Generated OpenAPI client for services/<api>
-└── packages/<bff>-client/     — Generated OpenAPI client for services/<bff> [optional]
+stashup/
+├── apps/
+│   ├── web/           — Next.js member/user app (port 3000) — full-stack
+│   └── admin/         — Next.js admin panel (port 3001) — full-stack
+├── packages/
+│   ├── db/            — Shared Prisma client + all schema files
+│   └── ui/            — Shared shadcn/ui components
+├── package.json
+└── pnpm-workspace.yaml
 ```
 
-## API Client Mapping
+### Data Layer
 
-Each frontend app has one dedicated generated client. **Never mix them.**
+```
+packages/db/prisma/
+├── schema.prisma        — generator + datasource (prismaSchemaFolder)
+├── auth.prisma          — BetterAuth user tables
+├── admin-auth.prisma    — BetterAuth admin tables (admin_ prefix)
+└── business.prisma      — application domain
+```
 
-| Frontend App | API Client Package | Backend Service |
-|---|---|---|
-| `apps/<dashboard>` | `@workspace/<api>-client` | `services/<api>` |
-| `apps/<client>` | `@workspace/<bff>-client` | `services/<bff>` |
+Import everywhere server-side: `import { prisma } from "@workspace/db"`
 
-_Fill in your actual package names above._
+### Auth Architecture
+
+Two BetterAuth instances, one shared database.
+
+| App | Auth file | Tables |
+|-----|-----------|--------|
+| `apps/web` | `apps/web/lib/auth.ts` | `user`, `session`, `account`, `verification` |
+| `apps/admin` | `apps/admin/lib/auth.ts` | `admin_user`, `admin_session`, `admin_account`, `admin_verification` |
+
+**Never mix auth clients across apps.**
+
+---
+
+## API Pattern — Full-Stack Next.js (No NestJS)
+
+All server logic goes into:
+
+1. **Server Components** — read Prisma directly (no API call needed)
+2. **Server Actions** (`"use server"`) — mutations from client components
+3. **Route Handlers** (`app/api/*/route.ts`) — webhooks, REST endpoints
+
+### Session Helper (use in every protected route/action)
+
+```typescript
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+
+const session = await auth.api.getSession({ headers: await headers() });
+if (!session) redirect("/sign-in");
+const userId = session.user.id;
+```
+
+### Access Control Pattern (Circle-Based — Not Multi-Tenant)
+
+```typescript
+// Verify the requesting user is a member of the circle
+async function requireCircleMember(circleId: string, userId: string) {
+  const membership = await prisma.membership.findUnique({
+    where: { circleId_userId: { circleId, userId } },
+  });
+  if (!membership) throw new Error("Not a circle member");
+  return membership;
+}
+
+async function requireCircleCreator(circleId: string, userId: string) {
+  const membership = await requireCircleMember(circleId, userId);
+  if (membership.role !== "CREATOR") throw new Error("Not the circle creator");
+  return membership;
+}
+```
+
+There is NO `requireTenantAccess` — this is not a multi-tenant SaaS.
+
+---
+
+## Frontend Data Fetching
+
+- **Server Components:** fetch via Prisma directly — preferred for initial page load
+- **Client Components:** use React Query `useMutation` / `useQuery` calling server actions or route handlers
+- **Auth forms:** use BetterAuth client directly (`authClient.signIn.email`, etc.) — `useState` for loading/error is acceptable here only
+- **NEVER** import `prisma` in client components (`"use client"` files)
+- **NEVER** use raw `fetch` with string URLs in feature code — use typed server actions or route handler wrappers
+
+---
 
 ## Absolute Rules (All Agents)
 
-1. **NEVER bypass `requireTenantAccess`** (or equivalent) for tenant-scoped data
-2. **NEVER use `as any`** — fix types properly
-3. **NEVER edit `generated/prisma/*`** in any service — change schema and regenerate
-4. **NEVER import toast from `sonner`** directly — always from `@workspace/ui/components/sonner`
-5. **NEVER use raw fetch/axios in features** — use the generated API client via React Query
-6. **NEVER return raw Prisma models** — always use response DTOs
-7. **NEVER log PII, tokens, or secrets**
-8. **NEVER manually edit generated client packages** — run codegen
-9. **ALWAYS** run `pnpm typecheck` and `pnpm lint` after changes
+1. **NEVER** import `prisma` in a `"use client"` file — server-side only
+2. **NEVER** use `as any` — fix types properly
+3. **NEVER** edit `packages/db/generated/*` — change schema and regenerate
+4. **NEVER** import toast from `sonner` directly — always from `@workspace/ui/components/sonner`
+5. **NEVER** skip circle membership/creator checks on circle-scoped operations
+6. **ALWAYS** store monetary amounts as `Int` in kobo — never `Float`
+7. **ALWAYS** run `pnpm typecheck` and `pnpm lint` after changes
+8. **NEVER** log PII, tokens, webhook secrets, or session tokens
+
+---
+
+## Money Rules
+
+- Internal storage: **kobo** (`Int`) — ₦10,000 = `1000000`
+- Nomba API (outbound): full Naira — `amount = minorAmount / 100`
+- Nomba webhook (inbound): `transactionAmount` × 100 → kobo
+- UI display: `₦10,000.00` — never expose raw kobo integers
+
+---
+
+## Nomba Webhook Safety
+
+Order is mandatory:
+1. Capture raw body (disable body parser — use `req.text()`)
+2. Dedup: `INSERT WebhookReceipt` on `(provider, providerEventId)` — duplicate → 200 OK stop
+3. Verify HmacSHA256 `nomba-signature` header (timing-safe `crypto.timingSafeEqual`)
+4. Business logic inside `prisma.$transaction()`
+5. Always return 200 — Nomba retries on non-200
+
+## Payout Safety (Non-Negotiable — 3 Layers)
+
+1. `Payout.cycleId @unique` DB constraint
+2. `SELECT FOR UPDATE` equivalent: read cycle status inside `$transaction`, abort if already `PAYOUT_INITIATED`
+3. `merchantTxRef = "payout_${cycleId}"` sent to Nomba as idempotency key
+
+---
 
 ## Workflow Commands
 
 ```bash
-# Schema changes (run from service directory)
+# From packages/db/
 npx prisma migrate dev --name <description>
 npx prisma generate
 
-# API client regeneration (run once per affected service)
-pnpm --filter @workspace/<api>-client codegen
-pnpm --filter @workspace/<bff>-client codegen   # if applicable
-
-# Verification
+# Root
+pnpm dev          # starts all apps
 pnpm typecheck
 pnpm lint
+```
 
-# Development
-pnpm dev
+---
+
+## Environment Variables
+
+```
+DATABASE_URL=
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=http://localhost:3000
+ADMIN_BETTER_AUTH_SECRET=
+ADMIN_BETTER_AUTH_URL=http://localhost:3001
+NOMBA_CLIENT_ID=
+NOMBA_CLIENT_SECRET=
+NOMBA_WEBHOOK_SECRET=
+NOMBA_BASE_URL=https://api.nomba.com
+RESEND_API_KEY=
 ```
