@@ -8,8 +8,8 @@ import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 import { Button } from "@workspace/ui/components/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@workspace/ui/components/card"
-import { Input } from "@workspace/ui/components/input"
-import { Label } from "@workspace/ui/components/label"
+import { Form } from "@workspace/ui/components/form"
+import { FormInput } from "@workspace/ui/components/form-input"
 import { toast } from "@workspace/ui/components/sonner"
 
 const loginSchema = z.object({
@@ -85,54 +85,44 @@ export default function AdminLoginPage() {
               Authorized personnel only. Multi-factor authentication required.
             </CardDescription>
           </CardHeader>
-          <form onSubmit={onSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-center text-sm font-medium text-destructive">
-                  {error}
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="email">Admin Email</Label>
-                <Input
-                  id="email"
+          <Form {...form}>
+            <form onSubmit={onSubmit}>
+              <CardContent className="space-y-4">
+                {error && (
+                  <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-center text-sm font-medium text-destructive">
+                    {error}
+                  </div>
+                )}
+                <FormInput
+                  control={form.control}
+                  name="email"
+                  label="Admin Email"
                   type="email"
                   placeholder="admin@stashup.com"
                   disabled={isLoading}
-                  required
-                  {...form.register("email")}
                   className="transition-all duration-200 focus:border-purple-500 focus:ring-purple-500/20"
                 />
-                {form.formState.errors.email && (
-                  <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
+                <FormInput
+                  control={form.control}
+                  name="password"
+                  label="Password"
                   type="password"
                   placeholder="••••••••"
                   disabled={isLoading}
-                  required
-                  {...form.register("password")}
                   className="transition-all duration-200 focus:border-purple-500 focus:ring-purple-500/20"
                 />
-                {form.formState.errors.password && (
-                  <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col space-y-4">
-              <Button
-                type="submit"
-                className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold transition-all duration-300 hover:from-purple-600 hover:to-indigo-600 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:hover:scale-100 cursor-pointer"
-                disabled={isLoading}
-              >
-                {isLoading ? "Authenticating..." : "Login"}
-              </Button>
-            </CardFooter>
-          </form>
+              </CardContent>
+              <CardFooter className="flex flex-col space-y-4">
+                <Button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold transition-all duration-300 hover:from-purple-600 hover:to-indigo-600 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:hover:scale-100 cursor-pointer"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Authenticating..." : "Login"}
+                </Button>
+              </CardFooter>
+            </form>
+          </Form>
         </Card>
       </div>
     </div>
