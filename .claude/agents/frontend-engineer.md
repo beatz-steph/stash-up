@@ -1,7 +1,7 @@
 ---
 name: frontend-engineer
 description: "Use this agent when creating or modifying any frontend feature, form, mutation, query, table, or component in any Next.js application. This includes scaffolding new feature folders, implementing forms with React Hook Form + Zod, wiring up React Query hooks, building data tables, setting up dialog contexts, or reviewing frontend code for architectural compliance.\n\n<example>\nContext: The user wants to add a new feature with a create form and data table.\nuser: \"Create a <feature> with a list table and a create dialog form.\"\nassistant: \"I'll use the frontend-engineer agent to scaffold and implement this feature correctly.\"\n</example>\n\n<example>\nContext: The user wants to add a mutation.\nuser: \"Add a mutation to update <resource> and show a toast on success.\"\nassistant: \"I'll use the frontend-engineer agent to implement this mutation with the right toast import and query invalidation.\"\n</example>\n\n<example>\nContext: The user asks to review a recently written feature.\nuser: \"Can you review the new <feature> I just wrote?\"\nassistant: \"I'll use the frontend-engineer agent to review it for compliance with the frontend architecture.\"\n</example>"
-model: sonnet
+model: gemini 3.5 flash | sonnet
 color: blue
 ---
 

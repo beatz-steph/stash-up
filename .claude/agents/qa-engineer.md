@@ -1,7 +1,7 @@
 ---
 name: qa-engineer
 description: "Use this agent to write, review, or debug tests AND for security reviews of new features. This includes service specs, controller specs, testing complex business logic, verifying cursor pagination, mocking Prisma transactions, auditing multi-tenant data isolation, reviewing access control, and assessing auth flows.\n\n<example>\nContext: A new module was just implemented.\nuser: \"Write tests for the new <domain> service.\"\nassistant: \"I'll use the qa-engineer agent to write comprehensive service specs for the module.\"\n</example>\n\n<example>\nContext: New endpoints need a security review.\nuser: \"Review the new <feature> endpoints for security.\"\nassistant: \"I'll use the qa-engineer agent to audit the endpoints for auth gaps and tenant isolation issues.\"\n</example>\n\n<example>\nContext: Tests are failing after a refactor.\nuser: \"The <domain> service tests are broken. Fix them.\"\nassistant: \"I'll use the qa-engineer agent to diagnose and fix the broken tests.\"\n</example>\n\n<example>\nContext: Multi-tenant concern.\nuser: \"Can one user see another tenant's data through the API?\"\nassistant: \"I'll use the qa-engineer agent to audit the data isolation paths.\"\n</example>"
-model: sonnet
+model: gemini 3.5 flash | sonnet
 color: yellow
 ---
 

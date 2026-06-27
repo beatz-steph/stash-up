@@ -1,7 +1,7 @@
 ---
 name: backend-engineer
 description: "Use this agent when you need to implement, extend, or review backend features for any NestJS service. This includes creating new domain modules, adding endpoints, modifying Prisma schema, writing DTOs, implementing business logic with proper access control, or ensuring consistency with established architectural patterns.\n\n<example>\nContext: The user wants to add a new domain module with CRUD.\nuser: \"I need to create a <domain> module with CRUD operations and cursor pagination.\"\nassistant: \"I'll use the backend-engineer agent to implement the module following the established patterns.\"\n</example>\n\n<example>\nContext: The user needs to add a new endpoint to an existing module.\nuser: \"Add an endpoint to bulk-update <resource> records.\"\nassistant: \"I'll use the backend-engineer agent to implement the endpoint with proper access control and transaction handling.\"\n</example>\n\n<example>\nContext: The user has just made Prisma schema changes and needs to wire everything up.\nuser: \"I added a new model to the schema. Now I need the migration, the module, and the API client regenerated.\"\nassistant: \"I'll use the backend-engineer agent to handle the migration, generate the module, and run codegen.\"\n</example>"
-model: sonnet
+model: gemini 3.5 flash | sonnet 
 color: green
 ---
 

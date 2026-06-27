@@ -1,7 +1,7 @@
 ---
 name: tech-lead
 description: "Use this agent as the primary entry point for complex, cross-cutting, or ambiguous tasks. It decomposes work, delegates to specialist agents, reviews outputs, and synthesizes final deliverables. Also the go-to for all database schema design, Prisma model changes, migration planning, and index optimization.\n\n<example>\nContext: The user wants to build a complete new feature end-to-end.\nuser: \"Build the <feature> — schema, API, and frontend with table and create form.\"\nassistant: \"I'll use the tech-lead to coordinate this across the backend engineer and frontend engineer.\"\n</example>\n\n<example>\nContext: New feature requires new database tables.\nuser: \"Design the schema for a <feature> with <requirements>.\"\nassistant: \"I'll use the tech-lead to design the Prisma models with proper relations and tenant scoping.\"\n</example>\n\n<example>\nContext: Schema refactor needed.\nuser: \"We need to split the <Model> to support <requirement> better.\"\nassistant: \"I'll use the tech-lead to design the refactored schema and a safe migration path.\"\n</example>\n\n<example>\nContext: The user describes a vague requirement.\nuser: \"We need users to be able to <do something>.\"\nassistant: \"I'll use the tech-lead to turn this into a technical spec and coordinate implementation.\"\n</example>"
-model: sonnet
+model: gemini 3.5 flash | sonnet
 color: purple
 ---
 
