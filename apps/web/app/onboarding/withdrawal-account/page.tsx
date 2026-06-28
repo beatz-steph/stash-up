@@ -14,6 +14,11 @@ export default async function OnboardingWithdrawalPage() {
     redirect("/sign-in")
   }
 
+  // Enforce step order: email must be verified before linking a payout account.
+  if (!session.user.emailVerified) {
+    redirect("/")
+  }
+
   return (
     <div className="min-h-screen bg-su-canvas flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-[480px] space-y-6">
@@ -35,7 +40,7 @@ export default async function OnboardingWithdrawalPage() {
             Back to dashboard
           </Link>
           <span className="font-su-sans text-su-caption text-su-muted">
-            Step 2 of 3
+            Step 3 of 3
           </span>
         </div>
 
