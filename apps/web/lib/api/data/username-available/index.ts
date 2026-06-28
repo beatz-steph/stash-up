@@ -1,9 +1,15 @@
+import { api, type ApiOptions } from "../../client"
+import { UsernameAvailableResSchema } from "@/app/api/username-available/dto/username-available.dto"
+
 /** Typed wrapper around the username availability route handler. */
-export async function checkUsernameAvailable(username: string): Promise<boolean> {
-  const res = await fetch(
+export async function checkUsernameAvailable(
+  username: string,
+  options?: ApiOptions,
+): Promise<boolean> {
+  const data = await api.get(
     `/api/username-available?username=${encodeURIComponent(username)}`,
+    UsernameAvailableResSchema,
+    options,
   )
-  if (!res.ok) throw new Error("Failed to check username")
-  const data = (await res.json()) as { available: boolean }
   return data.available
 }

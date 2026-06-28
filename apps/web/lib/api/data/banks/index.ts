@@ -1,6 +1,7 @@
+import { z } from "zod"
 import { api, type ApiOptions } from "../../client"
-import type { Bank } from "../../../../app/api/banks/dto/bank.dto"
+import { BankSchema } from "@/app/api/banks/dto/bank.dto"
 
 export function fetchBanks(options?: ApiOptions) {
-  return api.get<Bank[]>("/api/banks", options)
+  return api.get("/api/banks", z.array(BankSchema), options)
 }
