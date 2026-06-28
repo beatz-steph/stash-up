@@ -130,3 +130,120 @@
     cursor: pointer;
     }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Stashup Design System — su- prefix
+   All variables prefixed --su- to avoid conflicts with shadcn/ui tokens.
+   Reference: /design.md for usage guidance and component recipes.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Brand */
+  --su-primary: #0052ff;
+  --su-primary-active: #003ecc;
+  --su-primary-disabled: #a8b8cc;
+
+  /* Text */
+  --su-ink: #0a0b0d;
+  --su-body: #5b616e;
+  --su-body-strong: #0a0b0d;
+  --su-muted: #7c828a;
+  --su-muted-soft: #a8acb3;
+  --su-on-primary: #ffffff;
+  --su-on-dark: #ffffff;
+  --su-on-dark-soft: #a8acb3;
+
+  /* Surface */
+  --su-canvas: #ffffff;
+  --su-surface-soft: #f7f7f7;
+  --su-surface-card: #ffffff;
+  --su-surface-strong: #eef0f3;
+  --su-surface-dark: #0a0b0d;
+  --su-surface-dark-elevated: #16181c;
+
+  /* Hairline */
+  --su-hairline: #dee1e6;
+  --su-hairline-soft: #eef0f3;
+
+  /* Semantic */
+  --su-semantic-up: #05b169;
+  --su-semantic-down: #cf202f;
+  --su-accent-yellow: #f4b000;
+}
+
+@theme inline {
+  /* ── Colors ── */
+  --color-su-primary: var(--su-primary);
+  --color-su-primary-active: var(--su-primary-active);
+  --color-su-primary-disabled: var(--su-primary-disabled);
+  --color-su-ink: var(--su-ink);
+  --color-su-body: var(--su-body);
+  --color-su-body-strong: var(--su-body-strong);
+  --color-su-muted: var(--su-muted);
+  --color-su-muted-soft: var(--su-muted-soft);
+  --color-su-on-primary: var(--su-on-primary);
+  --color-su-on-dark: var(--su-on-dark);
+  --color-su-on-dark-soft: var(--su-on-dark-soft);
+  --color-su-canvas: var(--su-canvas);
+  --color-su-surface-soft: var(--su-surface-soft);
+  --color-su-surface-card: var(--su-surface-card);
+  --color-su-surface-strong: var(--su-surface-strong);
+  --color-su-surface-dark: var(--su-surface-dark);
+  --color-su-surface-dark-elevated: var(--su-surface-dark-elevated);
+  --color-su-hairline: var(--su-hairline);
+  --color-su-hairline-soft: var(--su-hairline-soft);
+  --color-su-semantic-up: var(--su-semantic-up);
+  --color-su-semantic-down: var(--su-semantic-down);
+  --color-su-accent-yellow: var(--su-accent-yellow);
+
+  /* ── Font Family — Cal Sans is the single typeface for all text ── */
+  --font-su-sans: var(--font-cal-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-su-display: var(--font-su-sans);
+  --font-su-mono: var(--font-su-sans);
+
+  /* ── Font Sizes ── */
+  --font-size-su-display-mega: 5rem;       /* 80px */
+  --font-size-su-display-xl: 4rem;         /* 64px */
+  --font-size-su-display-lg: 3.25rem;      /* 52px */
+  --font-size-su-display-md: 2.75rem;      /* 44px */
+  --font-size-su-display-sm: 2.25rem;      /* 36px */
+  --font-size-su-title-lg: 2rem;           /* 32px */
+  --font-size-su-title-md: 1.125rem;       /* 18px */
+  --font-size-su-title-sm: 1rem;           /* 16px */
+  --font-size-su-body: 1rem;              /* 16px */
+  --font-size-su-body-sm: 0.875rem;        /* 14px */
+  --font-size-su-caption: 0.8125rem;       /* 13px */
+  --font-size-su-caption-sm: 0.75rem;      /* 12px */
+  --font-size-su-number: 1.125rem;         /* 18px */
+  --font-size-su-button: 1rem;             /* 16px */
+  --font-size-su-nav: 0.875rem;            /* 14px */
+
+  /* ── Letter Spacing ── */
+  --tracking-su-display-mega: -0.125rem;   /* -2px */
+  --tracking-su-display-xl: -0.1rem;       /* -1.6px */
+  --tracking-su-display-lg: -0.08125rem;   /* -1.3px */
+  --tracking-su-display-md: -0.0625rem;    /* -1px */
+  --tracking-su-display-sm: -0.03125rem;   /* -0.5px */
+  --tracking-su-title-lg: -0.025rem;       /* -0.4px */
+
+  /* ── Border Radius ── */
+  --radius-su-none: 0px;
+  --radius-su-xs: 0.25rem;    /* 4px */
+  --radius-su-sm: 0.5rem;     /* 8px */
+  --radius-su-md: 0.75rem;    /* 12px */
+  --radius-su-lg: 1rem;       /* 16px */
+  --radius-su-xl: 1.5rem;     /* 24px */
+  --radius-su-pill: 6.25rem;  /* 100px */
+  --radius-su-full: 9999px;
+
+  /* ── Spacing ── */
+  --spacing-su-xxs: 0.25rem;    /* 4px */
+  --spacing-su-xs: 0.5rem;      /* 8px */
+  --spacing-su-sm: 0.75rem;     /* 12px */
+  --spacing-su-base: 1rem;      /* 16px */
+  --spacing-su-md: 1.25rem;     /* 20px */
+  --spacing-su-lg: 1.5rem;      /* 24px */
+  --spacing-su-xl: 2rem;        /* 32px */
+  --spacing-su-xxl: 3rem;       /* 48px */
+  --spacing-su-section: 6rem;   /* 96px */
+}
