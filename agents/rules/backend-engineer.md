@@ -55,12 +55,14 @@ export async function createCircle(data: CreateCircleInput) {
 
 ```typescript
 // apps/web/app/api/<resource>/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@workspace/db";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { validateRequestBody } from "@/lib/api/validate";
+import { CreateResourceReqSchema } from "./dto/<resource>.dto";
 
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -68,15 +70,29 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data });
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json();
-  // validate + write
-  return NextResponse.json({ data }, { status: 201 });
+  // 1. Validation using validateRequestBody
+  const validation = await validateRequestBody(req, CreateResourceReqSchema);
+  if (!validation.success) {
+    return validation.errorResponse;
+  }
+
+  // 2. Business logic
+  const { field1, field2 } = validation.data;
+  // ... write to DB
+  
+  return NextResponse.json({ data: ... }, { status: 201 });
 }
 ```
+
+### API DTO Standard
+All API Request/Response data transfer objects must be defined in `apps/web/app/api/[feature]/dto/[feature].dto.ts`.
+- Use Zod for schema validation.
+- Export both the Zod schema (`XReqSchema`) and its inferred TypeScript type (`export type XReq = z.infer<typeof XReqSchema>`).
+- Client-side data helpers must import these inferred types from the DTO folder.
 
 ---
 

@@ -16,18 +16,20 @@ Next.js 15 (App Router), React 19, TailwindCSS 4, TanStack Query 5, React Hook F
 ```
 features/<feature-name>/
 ├── context/           # Context providers and context hooks
-├── components/        # Feature-specific UI components
+├── components/        # Feature-specific UI components (single files e.g., banner.tsx, NEVER nested as banner/index.tsx)
 ├── forms/
 │   └── <form-name>/
 │       ├── index.tsx  # Presentational UI only — no logic props
 │       └── model.tsx  # Logic: Zod schema, RHF, mutations, context
 ├── mutations/         # React Query useMutation hooks
 ├── queries/           # React Query useQuery hooks (client-side only)
+├── functions.ts       # (Optional) local feature logic and utility functions
 └── types.ts           # (Optional) local feature types
 ```
 
 **Rules:**
-- No raw `fetch` with string URLs in features — use typed server action calls or typed route handler wrappers
+- No raw `fetch` with string URLs in features — use typed server action calls or typed data fetchers from `lib/api/data`.
+- Components in `components/` must be single files (e.g. `onboarding-banner.tsx`) rather than wrapping inside a folder with an `index.tsx`.
 - Context definitions live in `features/<feature>/context/`
 - No cross-feature imports except through `packages/ui`
 
@@ -170,7 +172,17 @@ export function useCircles() {
 
 ---
 
-## 6. Toast Import
+## 6. API Data Fetchers
+
+Pure API fetchers using the `api` client wrapper must be kept in `apps/web/lib/api/data/`.
+The folder structure inside `lib/api/data` is **flattened by feature**. Do NOT create deeply nested folders that perfectly mirror the API route.
+For example, the fetchers for `/api/withdrawal-account` and `/api/withdrawal-account/resolve` must both live in the same file: `lib/api/data/withdrawal-account/index.ts`. 
+
+These raw fetchers should then be imported into React Query hooks located in `features/<feature>/queries/` or `mutations/`.
+
+---
+
+## 7. Toast Import
 
 **ALWAYS** import toast from `@workspace/ui/components/sonner`. Never import from `sonner` directly.
 
@@ -180,7 +192,7 @@ import { toast } from "@workspace/ui/components/sonner";
 
 ---
 
-## 7. UI/UX Standards
+## 8. UI/UX Standards
 
 - **Mobile-first:** every layout must work at 320px+
 - **Loading states:** skeleton or spinner for async content — no layout shifts
@@ -190,7 +202,7 @@ import { toast } from "@workspace/ui/components/sonner";
 
 ---
 
-## 8. TypeScript
+## 9. TypeScript
 
 - Strict — no `as any`, no `any`. Use `unknown` when type is uncertain.
 - Never log tokens, PII, session data, or API keys.

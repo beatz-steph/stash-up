@@ -70,13 +70,23 @@ Two BetterAuth instances, one shared database.
 
 ---
 
-## API Pattern — Full-Stack Next.js (No NestJS)
+## API Pattern — API Routes Are the Backend
 
-All server logic goes into:
+Treat `app/api/**` as a standalone backend service that will later be extracted to its
+own deployment. **Every data read and write goes through an API route handler.** The
+ONLY exception is BetterAuth's server helpers (`auth.api.*`), which may be called directly.
 
-1. **Server Components** — read Prisma directly (no API call needed)
-2. **Server Actions** (`"use server"`) — mutations from client components
-3. **Route Handlers** (`app/api/*/route.ts`) — webhooks, REST endpoints
+1. **Route Handlers** (`app/api/*/route.ts`) own ALL Prisma access + business logic,
+   each guarded by a session check (plus verification/circle guards as needed).
+2. **Server Components** exist only to render the initial UI faster. They fetch from the
+   API routes over HTTP via the typed client in `lib/api/*` (`await serverApiOptions()`
+   forwards the session cookie + absolute origin). They do NOT import Prisma or business logic.
+3. **Client Components** call the same `lib/api/*` wrappers through React Query.
+4. **Server Actions are NOT used for data access** — prefer route handlers so the backend
+   stays portable.
+
+**`prisma` is imported ONLY inside `app/api/**`** (and shared backend libs that routes
+import, e.g. `lib/access-control.ts`). Never in components, `features/*`, or `lib/api/*`.
 
 ### Session Helper (use in every protected route/action)
 
@@ -114,11 +124,17 @@ There is NO `requireTenantAccess` — this is not a multi-tenant SaaS.
 
 ## Frontend Data Fetching
 
-- **Server Components:** fetch via Prisma directly — preferred for initial page load
-- **Client Components:** use React Query `useMutation` / `useQuery` calling server actions or route handlers
-- **Auth forms:** use BetterAuth client directly (`authClient.signIn.email`, etc.) — `useState` for loading/error is acceptable here only
-- **NEVER** import `prisma` in client components (`"use client"` files)
-- **NEVER** use raw `fetch` with string URLs in feature code — use typed server actions or route handler wrappers
+All data flows through the typed API client in `lib/api/*` (never raw `fetch` with
+string URLs, never Prisma in the UI layer).
+
+- **Server Components:** `await serverApiOptions()` then call a typed wrapper
+  (e.g. `fetchOnboardingStatus(opts)`) — forwards the session cookie + absolute origin.
+- **Client Components:** React Query `useQuery` / `useMutation` calling the same typed
+  wrappers (same-origin, cookies sent automatically).
+- **Auth forms:** use the BetterAuth client directly (`authClient.signIn.email`, etc.) —
+  `useState` for loading/error is acceptable here only.
+- **NEVER** import `prisma` in a component, `features/*`, or `lib/api/*`.
+- **NEVER** use raw `fetch` with string URLs in feature code — add a typed wrapper in `lib/api/*`.
 
 ---
 

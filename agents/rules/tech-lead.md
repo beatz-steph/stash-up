@@ -53,7 +53,10 @@ For each sub-task include:
 - [ ] Server action has session check + circle access check
 - [ ] Client components do NOT import `prisma`
 - [ ] Toast imported from `@workspace/ui/components/sonner`
-- [ ] Mutations invalidate the correct query keys
+- [ ] API Route request validation uses `validateRequestBody` and DTOs in `apps/web/app/api/[feature]/dto/`
+- [ ] Client API fetchers are flattened by feature in `apps/web/lib/api/data/` (no deep nested routes)
+- [ ] Query and Mutation hooks reside in `features/[feature]/queries/` and `features/[feature]/mutations/`
+- [ ] Feature components are single files inside `components/` (no `index.tsx` inside component folders)
 - [ ] Amounts stored as `Int` kobo — never `Float`
 - [ ] `pnpm typecheck` and `pnpm lint` pass
 
