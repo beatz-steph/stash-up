@@ -1,10 +1,13 @@
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card"
+import { prisma } from "@workspace/db"
 import { SignOutButton } from "@/components/sign-out-button"
+import { OnboardingBanner } from "@/features/onboarding/components/onboarding-banner"
+import { getOnboardingStatus } from "@/features/onboarding/queries"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
 
-export default async function Page() {
+export default async function DashboardPage() {
   const session = await auth.api.getSession({
     headers: await headers(),
   })
@@ -15,73 +18,133 @@ export default async function Page() {
 
   const { user } = session
 
-  return (
-    <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-slate-950 p-6 text-slate-100">
-      {/* Background Neon Glows */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute top-[-20%] left-[-20%] h-[600px] w-[600px] rounded-full bg-indigo-500/10 blur-[150px]" />
-        <div className="absolute bottom-[-20%] right-[-20%] h-[600px] w-[600px] rounded-full bg-pink-500/10 blur-[150px]" />
-      </div>
+  // Fetch onboarding status and withdrawal account details
+  const onboardingStatus = await getOnboardingStatus(user.id)
+  const withdrawalAccount = await prisma.withdrawalAccount.findUnique({
+    where: { userId: user.id },
+  })
 
-      <div className="w-full max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 font-bold text-white shadow-md shadow-indigo-500/20">
-              SU
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent">
-                StashUp
-              </h1>
-              <p className="text-xs text-muted-foreground">Digital Thrift savings</p>
-            </div>
-          </div>
+  // Check if onboarding banner should show (i.e. not all stages are complete)
+  const showBanner = !(onboardingStatus.account && onboardingStatus.withdrawal && onboardingStatus.circle)
+
+  return (
+    <div className="min-h-screen bg-su-canvas text-su-ink flex flex-col">
+      {/* Real Top Navigation */}
+      <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-6 sm:px-8 flex items-center justify-between">
+        <span className="font-su-display text-su-title-md font-semibold text-su-ink tracking-tight">
+          Stashup
+        </span>
+        <div className="flex items-center gap-4">
+          <span className="font-su-sans text-su-nav font-medium text-su-body">
+            @{user.username}
+          </span>
           <SignOutButton />
         </div>
+      </nav>
 
-        <Card className="border-border/40 bg-card/60 shadow-2xl backdrop-blur-md">
-          <CardHeader className="border-b border-border/40 pb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl font-semibold">User Dashboard</CardTitle>
-                <CardDescription className="text-muted-foreground/80">
-                  Authentication successfully set up and active!
-                </CardDescription>
-              </div>
-              <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400 ring-1 ring-emerald-500/20 ring-inset">
-                Session Active
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="divide-y divide-border/40 pt-6">
-            <div className="grid grid-cols-3 py-4 first:pt-0">
-              <span className="text-sm font-medium text-muted-foreground">Full Name</span>
-              <span className="col-span-2 text-sm font-semibold text-slate-200">{user.name}</span>
-            </div>
-            <div className="grid grid-cols-3 py-4">
-              <span className="text-sm font-medium text-muted-foreground">Username / Handle</span>
-              <span className="col-span-2 text-sm font-mono font-semibold text-indigo-400">@{user.username}</span>
-            </div>
-            <div className="grid grid-cols-3 py-4">
-              <span className="text-sm font-medium text-muted-foreground">Email Address</span>
-              <span className="col-span-2 text-sm font-semibold text-slate-200">{user.email}</span>
-            </div>
-            <div className="grid grid-cols-3 py-4 last:pb-0">
-              <span className="text-sm font-medium text-muted-foreground">User ID</span>
-              <span className="col-span-2 text-sm font-mono text-xs text-muted-foreground">{user.id}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Demo Notice card */}
-        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 text-sm text-indigo-300 backdrop-blur-sm">
-          <h3 className="font-bold text-indigo-200 mb-1">Next Steps</h3>
-          <p className="leading-relaxed">
-            The workspace has been configured with split Prisma 7 schemas under <code className="bg-indigo-950/50 px-1 py-0.5 rounded text-xs text-indigo-200">packages/db/prisma</code>. 
-            Auth routing and database connection pooling are live. Next, we will implement Circle invites and Rotate Savings circle logic!
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-[1000px] w-full mx-auto p-6 sm:p-8 space-y-8">
+        <div className="space-y-1">
+          <h1 className="font-su-sans text-su-title-lg font-semibold text-su-ink">
+            Good morning, {user.name}
+          </h1>
+          <p className="font-su-sans text-su-body-sm text-su-muted">
+            Manage your rotating savings circles and payouts.
           </p>
         </div>
-      </div>
+
+        {/* Onboarding Banner (if incomplete) */}
+        {showBanner ? (
+          <OnboardingBanner status={onboardingStatus} />
+        ) : (
+          <div className="bg-su-surface-soft border border-su-hairline rounded-su-xl p-su-xl flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="font-su-sans text-su-title-sm font-semibold text-su-ink flex items-center gap-2">
+                <span>Account fully setup</span>
+                <span className="bg-su-semantic-up/10 text-su-semantic-up font-su-sans text-su-caption-sm font-semibold rounded-su-pill px-2.5 py-0.5">
+                  Verified
+                </span>
+              </h3>
+              <p className="font-su-sans text-su-body-sm text-su-muted">
+                Your withdrawal destination is linked and circles are ready.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* User Information Card */}
+          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+            <CardHeader className="pb-4">
+              <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
+                Profile Details
+              </CardTitle>
+              <CardDescription className="font-su-sans text-su-caption text-su-muted">
+                Your Stashup account details
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="divide-y divide-su-hairline-soft pt-0">
+              <div className="flex justify-between py-3">
+                <span className="font-su-sans text-su-body-sm text-su-muted">Name</span>
+                <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{user.name}</span>
+              </div>
+              <div className="flex justify-between py-3">
+                <span className="font-su-sans text-su-body-sm text-su-muted">Username</span>
+                <span className="font-su-sans text-su-body-sm font-mono text-su-primary">@{user.username}</span>
+              </div>
+              <div className="flex justify-between py-3">
+                <span className="font-su-sans text-su-body-sm text-su-muted">Email</span>
+                <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{user.email}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Withdrawal Account Card */}
+          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+            <CardHeader className="pb-4">
+              <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
+                Withdrawal Destination
+              </CardTitle>
+              <CardDescription className="font-su-sans text-su-caption text-su-muted">
+                Bank account linked for payouts
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {withdrawalAccount ? (
+                <div className="divide-y divide-su-hairline-soft">
+                  <div className="flex justify-between py-3">
+                    <span className="font-su-sans text-su-body-sm text-su-muted">Bank</span>
+                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{withdrawalAccount.bankName}</span>
+                  </div>
+                  <div className="flex justify-between py-3">
+                    <span className="font-su-sans text-su-body-sm text-su-muted">Account Number</span>
+                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+                      {withdrawalAccount.accountNumber.slice(0, 2) + "******" + withdrawalAccount.accountNumber.slice(-2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-3">
+                    <span className="font-su-sans text-su-body-sm text-su-muted">Account Name</span>
+                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{withdrawalAccount.accountName}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-4 text-center space-y-3">
+                  <p className="font-su-sans text-su-body-sm text-su-muted">
+                    No withdrawal account linked yet.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-su-canvas py-8 px-6 border-t border-su-hairline-soft text-center mt-12">
+        <p className="font-su-sans text-su-caption text-su-muted">
+          © 2026 Stashup. All rights reserved.
+        </p>
+      </footer>
     </div>
   )
 }
