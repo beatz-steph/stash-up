@@ -5,7 +5,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "../../../../lib/auth-client"
-import { useUsernameAvailability } from "./use-username-availability"
+import { useUsernameAvailability } from "../../queries/use-username-availability"
 
 export const signUpSchema = z
   .object({

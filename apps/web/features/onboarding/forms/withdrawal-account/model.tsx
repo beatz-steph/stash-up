@@ -4,10 +4,9 @@ import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useEffect, useState } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
-import { useRouter } from "next/navigation"
-import { getBanks, resolveAccountName, saveWithdrawalAccount } from "@/app/onboarding/withdrawal-account/actions"
-import { toast } from "@workspace/ui/components/sonner"
+import { resolveAccountName } from "@/lib/api/data/withdrawal-account"
+import { useBanks } from "../../queries/use-banks"
+import { useSaveWithdrawalAccount } from "../../mutations/use-save-withdrawal-account"
 
 export const withdrawalAccountSchema = z.object({
   bankCode: z.string().min(1, "Please select a bank"),
@@ -21,17 +20,12 @@ export const withdrawalAccountSchema = z.object({
 export type WithdrawalAccountFormValues = z.infer<typeof withdrawalAccountSchema>
 
 export function useWithdrawalAccountForm() {
-  const router = useRouter()
   const [resolvedName, setResolvedName] = useState<string | null>(null)
   const [isResolving, setIsResolving] = useState(false)
   const [resolutionError, setResolutionError] = useState<string | null>(null)
 
-  // Fetch banks list
-  const { data: banks = [], isLoading: isLoadingBanks } = useQuery({
-    queryKey: ["banks"],
-    queryFn: () => getBanks(),
-    staleTime: Infinity, // static list doesn't change
-  })
+  const { data: banks = [], isLoading: isLoadingBanks } = useBanks()
+  const saveMutation = useSaveWithdrawalAccount()
 
   const form = useForm<WithdrawalAccountFormValues>({
     resolver: zodResolver(withdrawalAccountSchema),
@@ -64,10 +58,10 @@ export function useWithdrawalAccountForm() {
       form.setValue("accountName", "")
 
       try {
-        const name = await resolveAccountName({ bankCode, accountNumber })
+        const { accountName } = await resolveAccountName({ bankCode, accountNumber })
         if (active) {
-          setResolvedName(name)
-          form.setValue("accountName", name, { shouldValidate: true })
+          setResolvedName(accountName)
+          form.setValue("accountName", accountName, { shouldValidate: true })
         }
       } catch (err) {
         if (active) {
@@ -88,19 +82,6 @@ export function useWithdrawalAccountForm() {
       active = false
     }
   }, [bankCode, accountNumber, form])
-
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: saveWithdrawalAccount,
-    onSuccess: () => {
-      toast.success("Withdrawal account saved successfully")
-      router.push("/")
-      router.refresh()
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save account")
-    },
-  })
 
   const onSubmit = form.handleSubmit((values) => {
     const selectedBank = banks.find((b) => b.code === values.bankCode)

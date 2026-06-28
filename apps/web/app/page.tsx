@@ -1,10 +1,11 @@
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { prisma } from "@workspace/db"
 import { SignOutButton } from "@/components/sign-out-button"
 import { OnboardingBanner } from "@/features/onboarding/components/onboarding-banner"
-import { getOnboardingStatus } from "@/features/onboarding/queries"
+import { fetchOnboardingStatus } from "@/lib/api/data/onboarding"
+import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
+import { serverApiOptions } from "@/lib/api/server"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
 
 export default async function DashboardPage() {
@@ -18,14 +19,13 @@ export default async function DashboardPage() {
 
   const { user } = session
 
-  // Fetch onboarding status and withdrawal account details
-  const onboardingStatus = await getOnboardingStatus(user.id)
-  const withdrawalAccount = await prisma.withdrawalAccount.findUnique({
-    where: { userId: user.id },
-  })
-
-  // Check if onboarding banner should show (i.e. not all stages are complete)
-  const showBanner = !(onboardingStatus.account && onboardingStatus.withdrawal && onboardingStatus.circle)
+  // Fetch onboarding status and withdrawal account via the API (backend layer),
+  // forwarding the session cookie. Server Components only render — they don't read the DB.
+  const apiOptions = await serverApiOptions()
+  const [onboardingStatus, withdrawalAccount] = await Promise.all([
+    fetchOnboardingStatus(apiOptions),
+    fetchWithdrawalAccount(apiOptions),
+  ])
 
   return (
     <div className="min-h-screen bg-su-canvas text-su-ink flex flex-col">
@@ -53,24 +53,8 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        {/* Onboarding Banner (if incomplete) */}
-        {showBanner ? (
-          <OnboardingBanner status={onboardingStatus} />
-        ) : (
-          <div className="bg-su-surface-soft border border-su-hairline rounded-su-xl p-su-xl flex items-center justify-between">
-            <div className="space-y-1">
-              <h3 className="font-su-sans text-su-title-sm font-semibold text-su-ink flex items-center gap-2">
-                <span>Account fully setup</span>
-                <span className="bg-su-semantic-up/10 text-su-semantic-up font-su-sans text-su-caption-sm font-semibold rounded-su-pill px-2.5 py-0.5">
-                  Verified
-                </span>
-              </h3>
-              <p className="font-su-sans text-su-body-sm text-su-muted">
-                Your withdrawal destination is linked and circles are ready.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* Onboarding banner — shows setup progress, or the circle unlock once complete */}
+        <OnboardingBanner status={onboardingStatus} userEmail={user.email} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* User Information Card */}

@@ -11,15 +11,7 @@ export type UsernameStatus =
   | "taken"
   | "error"       // network / server failure
 
-/** Typed wrapper around the route handler — keeps raw fetch out of components. */
-async function checkUsernameAvailable(username: string): Promise<boolean> {
-  const res = await fetch(
-    `/api/username-available?username=${encodeURIComponent(username)}`,
-  )
-  if (!res.ok) throw new Error("Failed to check username")
-  const data = (await res.json()) as { available: boolean }
-  return data.available
-}
+import { checkUsernameAvailable } from "@/lib/api/data/username-available"
 
 /**
  * Debounced, cached username availability check. Drives the inline status

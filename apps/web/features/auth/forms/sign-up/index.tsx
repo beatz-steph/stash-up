@@ -7,7 +7,7 @@ import { FormInput } from "@workspace/ui/form/input"
 import { FormPasswordInput } from "@workspace/ui/form/password-input"
 import { AuthShell } from "@/features/auth/components/auth-shell"
 import { useSignUpForm } from "./model"
-import type { UsernameStatus } from "./use-username-availability"
+import type { UsernameStatus } from "../../queries/use-username-availability"
 
 function StepProgress({ step }: { step: 1 | 2 }) {
   return (
