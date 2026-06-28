@@ -247,3 +247,36 @@
   --spacing-su-xxl: 3rem;       /* 48px */
   --spacing-su-section: 6rem;   /* 96px */
 }
+
+/* ── Token bridge: remap shadcn semantic vars → Stashup su- palette ──
+   All components using bg-primary, text-muted-foreground, border-border etc.
+   automatically pick up Stashup brand colors without per-component edits. */
+:root {
+  --background: var(--su-canvas);
+  --foreground: var(--su-ink);
+  --card: var(--su-surface-card);
+  --card-foreground: var(--su-ink);
+  --popover: var(--su-surface-card);
+  --popover-foreground: var(--su-ink);
+  --primary: var(--su-primary);
+  --primary-foreground: var(--su-on-primary);
+  --secondary: var(--su-surface-strong);
+  --secondary-foreground: var(--su-ink);
+  --muted: var(--su-surface-soft);
+  --muted-foreground: var(--su-muted);
+  --accent: var(--su-surface-soft);
+  --accent-foreground: var(--su-ink);
+  --destructive: var(--su-semantic-down);
+  --border: var(--su-hairline);
+  --input: var(--su-hairline);
+  --ring: var(--su-primary);
+  --radius: 0.75rem;
+  --sidebar: var(--su-surface-card);
+  --sidebar-foreground: var(--su-ink);
+  --sidebar-primary: var(--su-primary);
+  --sidebar-primary-foreground: var(--su-on-primary);
+  --sidebar-accent: var(--su-surface-soft);
+  --sidebar-accent-foreground: var(--su-ink);
+  --sidebar-border: var(--su-hairline);
+  --sidebar-ring: var(--su-primary);
+}
