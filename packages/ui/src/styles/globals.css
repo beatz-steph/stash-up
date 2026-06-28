@@ -174,6 +174,40 @@
   --su-accent-yellow: #f4b000;
 }
 
+.dark {
+  /* Brand - unchanged */
+  --su-primary: #0052ff;
+  --su-primary-active: #003ecc;
+  --su-primary-disabled: #3d4a60;
+
+  /* Text - inverted */
+  --su-ink: #ffffff;
+  --su-body: #a8acb3;
+  --su-body-strong: #ffffff;
+  --su-muted: #7c828a;
+  --su-muted-soft: #5b616e;
+  --su-on-primary: #ffffff;
+  --su-on-dark: #ffffff;
+  --su-on-dark-soft: #a8acb3;
+
+  /* Surface - deep darks */
+  --su-canvas: #0a0b0d;
+  --su-surface-soft: #16181c;
+  --su-surface-card: #0a0b0d;
+  --su-surface-strong: #202327;
+  --su-surface-dark: #0a0b0d;
+  --su-surface-dark-elevated: #16181c;
+
+  /* Hairline - subtle dark borders */
+  --su-hairline: #2d3139;
+  --su-hairline-soft: #202327;
+
+  /* Semantic - unchanged or tweaked for dark mode */
+  --su-semantic-up: #05b169;
+  --su-semantic-down: #cf202f;
+  --su-accent-yellow: #f4b000;
+}
+
 @theme inline {
   /* ── Colors ── */
   --color-su-primary: var(--su-primary);

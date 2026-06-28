@@ -1,5 +1,6 @@
 import React from "react"
 import Waves from "@workspace/ui/extra/Waves.jsx"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function AuthLayout({
   children,
@@ -7,10 +8,14 @@ export default function AuthLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-h-screen w-full bg-su-canvas">
+    <div className="flex min-h-screen w-full bg-su-canvas relative">
+      <div className="absolute top-6 right-6 z-50">
+        <ThemeToggle />
+      </div>
+
       {/* Left Column - Desktop Only full-bleed placeholder image */}
       <div className="relative hidden w-1/2  lg:block lg:w-[45%] h-screen  p-4">
-        <div className="h-full w-full bg-su-surface-dark rounded-2xl overflow-hidden relative pr-0">
+        <div className="h-full w-full bg-su-surface-dark dark:bg-su-surface-dark-elevated rounded-2xl overflow-hidden relative pr-0">
           <Waves lineColor="#0052ff"
             backgroundColor="transparent"
             waveSpeedX={0.0125}

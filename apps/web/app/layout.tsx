@@ -21,6 +21,23 @@ const fontMono = Geist_Mono({
   variable: "--font-mono",
 })
 
+export const metadata = {
+  icons: [
+    {
+      rel: 'icon',
+      type: 'image/svg+xml',
+      url: '/icon.svg',
+      media: '(prefers-color-scheme: light)',
+    },
+    {
+      rel: 'icon',
+      type: 'image/svg+xml',
+      url: '/icon-dark.svg',
+      media: '(prefers-color-scheme: dark)',
+    },
+  ],
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -33,7 +50,12 @@ export default function RootLayout({
       className={cn("antialiased", satoshi.variable, fontMono.variable, "font-sans")}
     >
       <body>
-        <ThemeProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
           <Providers>
             {children}
             <Toaster richColors />
