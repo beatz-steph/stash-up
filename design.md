@@ -1,4 +1,4 @@
-# Stashup Design System
+# StashUp Design System
 
 Institutional visual language for a digital Ajo/Esusu savings platform.
 The brand reads as **calm, trustworthy fintech** — white canvas, single blue accent, pill geometry everywhere, near-black dark heroes for key moments.
@@ -11,7 +11,7 @@ CSS variables live in `packages/ui/src/styles/globals.css`.
 ## Brand Voice
 
 - **Institutional calm** — trustworthy place to save with your community. Not a gimmick, not a hustle app.
-- **Single accent** — Stashup Blue (`#0052ff`) carries every primary CTA. Used scarcely; one or two blue moments per page section.
+- **Single accent** — StashUp Blue (`#0052ff`) carries every primary CTA. Used scarcely; one or two blue moments per page section.
 - **Pill geometry** — every button is fully rounded (`rounded-su-pill`). Cards sit at `rounded-su-xl`. Sharp corners are absent.
 - **Three-mode rhythm** — pages rotate: white canvas → soft-gray elevation band → full-bleed dark hero.
 - **Monospace for money** — every Naira amount uses `font-feature-settings: 'tnum'` with Geist Mono for tabular alignment.
@@ -20,7 +20,7 @@ CSS variables live in `packages/ui/src/styles/globals.css`.
 
 ## Typography
 
-- **Satoshi** (local variable font, weights 300–900) is the single typeface for everything — display headings, the Stashup wordmark, body copy, form fields, labels, buttons, navigation, and captions. Hierarchy comes from size + weight + color.
+- **Satoshi** (local variable font, weights 300–900) is the single typeface for everything — display headings, the StashUp wordmark, body copy, form fields, labels, buttons, navigation, and captions. Hierarchy comes from size + weight + color.
 - **Geist Mono** is used for currency values and numbers.
 
 ### Setup (Next.js)
@@ -194,7 +194,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
 ### Buttons
 
 ```tsx
-// button-primary — Stashup Blue pill CTA
+// button-primary — StashUp Blue pill CTA
 <button className="bg-su-primary text-su-on-primary font-su-sans text-su-button font-semibold leading-[1.15] rounded-su-pill px-5 py-3 h-11 transition-colors hover:bg-su-primary-active disabled:bg-su-primary-disabled disabled:cursor-not-allowed">
   Join Circle
 </button>
@@ -230,7 +230,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
 ```tsx
 // top-nav-light — white page nav
 <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-su-xl flex items-center justify-between">
-  <span className="font-su-display text-su-ink font-normal">Stashup</span>
+  <span className="font-su-display text-su-ink font-normal">StashUp</span>
   <div className="flex items-center gap-su-lg">
     <a className="font-su-sans text-su-nav font-medium text-su-body leading-[1.4]">How it works</a>
   </div>
@@ -238,7 +238,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
 
 // top-nav-dark — over dark hero
 <nav className="bg-su-surface-dark h-16 px-su-xl flex items-center justify-between">
-  <span className="font-su-display text-su-on-dark font-normal">Stashup</span>
+  <span className="font-su-display text-su-on-dark font-normal">StashUp</span>
 </nav>
 ```
 
@@ -251,7 +251,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
     Save together, win together.
   </h1>
   <p className="font-su-sans text-su-body-md font-normal leading-relaxed text-su-on-dark-soft mt-su-lg max-w-xl">
-    Stashup brings your Ajo circle online — automated contributions, transparent payouts, zero drama.
+    StashUp brings your Ajo circle online — automated contributions, transparent payouts, zero drama.
   </p>
   <div className="flex gap-su-md mt-su-xl">
     {/* button-primary-lg + button-outline-dark */}
@@ -376,13 +376,13 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
 // footer
 <footer className="bg-su-canvas py-16 px-12 border-t border-su-hairline-soft">
   <p className="font-su-sans text-su-body-sm font-normal text-su-body">
-    © 2026 Stashup. All rights reserved.
+    © 2026 StashUp. All rights reserved.
   </p>
 </footer>
 
 // legal-band
 <div className="font-su-sans text-su-caption font-normal text-su-muted">
-  Stashup is not a licensed deposit-taking institution.
+  StashUp is not a licensed deposit-taking institution.
 </div>
 ```
 

@@ -32,7 +32,7 @@ export default async function DashboardPage() {
       {/* Real Top Navigation */}
       <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-6 sm:px-8 flex items-center justify-between">
         <span className="font-su-display text-su-title-md font-semibold text-su-ink tracking-tight">
-          Stashup
+          StashUp
         </span>
         <div className="flex items-center gap-4">
           <span className="font-su-sans text-su-nav font-medium text-su-body">
@@ -80,7 +80,7 @@ export default async function DashboardPage() {
                 Profile Details
               </CardTitle>
               <CardDescription className="font-su-sans text-su-caption text-su-muted">
-                Your Stashup account details
+                Your StashUp account details
               </CardDescription>
             </CardHeader>
             <CardContent className="divide-y divide-su-hairline-soft pt-0">
@@ -142,7 +142,7 @@ export default async function DashboardPage() {
       {/* Footer */}
       <footer className="bg-su-canvas py-8 px-6 border-t border-su-hairline-soft text-center mt-12">
         <p className="font-su-sans text-su-caption text-su-muted">
-          © 2026 Stashup. All rights reserved.
+          © 2026 StashUp. All rights reserved.
         </p>
       </footer>
     </div>

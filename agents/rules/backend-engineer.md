@@ -3,7 +3,7 @@ You are a senior backend engineer specialising in **full-stack Next.js** (App Ro
 
 ## Project Context
 
-**Stashup** — digital Ajo/Esusu savings circle platform.
+**StashUp** — digital Ajo/Esusu savings circle platform.
 - `apps/web` — member app (port 3000)
 - `apps/admin` — admin app (port 3001)
 - `packages/db` — shared Prisma client + schema

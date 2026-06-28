@@ -46,6 +46,7 @@
     "./lib/*": "./src/lib/*.ts",
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
-    "./form/*": "./src/form/*.tsx"
+    "./form/*": "./src/form/*.tsx",
+    "./extra/*": "./src/extra/*"
   }
 }

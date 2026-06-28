@@ -12,11 +12,11 @@ export function SignInForm() {
 
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to your Stashup account"
+      title="Welcome to StashUp"
+      subtitle="Sign in to your StashUp account"
       footer={
         <>
-          New to Stashup?{" "}
+          New to StashUp?{" "}
           <Link
             href="/sign-up"
             className="font-semibold text-su-primary hover:text-su-primary-active transition-colors"

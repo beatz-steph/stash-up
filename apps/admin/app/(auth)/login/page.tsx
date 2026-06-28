@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
             SU
           </div>
           <span className="text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
-            Stashup Portal
+            StashUp Portal
           </span>
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Platform Administration

@@ -87,14 +87,14 @@ export function useSignUpForm() {
       })
       if (error) {
         toast.error(error.message || "Failed to create account")
+        setIsLoading(false)
         return
       }
-      toast.success("Account created — welcome to Stashup!")
+      toast.success("Account created — welcome to StashUp!")
       router.push("/")
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
-    } finally {
       setIsLoading(false)
     }
   })

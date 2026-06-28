@@ -31,7 +31,7 @@ export default async function Page() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
-                Stashup Admin
+                StashUp Admin
               </h1>
               <p className="text-xs text-muted-foreground">Platform Administration Portal</p>
             </div>

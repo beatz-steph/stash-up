@@ -22,8 +22,8 @@ const fontMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Stashup Admin",
-  description: "Platform management for Stashup Savings Circles",
+  title: "StashUp Admin",
+  description: "Platform management for StashUp Savings Circles",
 };
 
 export default function RootLayout({

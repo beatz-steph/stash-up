@@ -1,8 +1,8 @@
-# CLAUDE.md — Stashup (Ajo/Esusu Digital Thrift App)
+# CLAUDE.md — StashUp (Ajo/Esusu Digital Thrift App)
 
 ## Project Overview
 
-**Stashup** is a digital Ajo/Esusu platform (rotating savings circle / ROSCA) built on Nomba Virtual Accounts for the Nomba × DevCareer Hackathon 2026.
+**StashUp** is a digital Ajo/Esusu platform (rotating savings circle / ROSCA) built on Nomba Virtual Accounts for the Nomba × DevCareer Hackathon 2026.
 
 **Stack:** Two full-stack Next.js 15 apps (App Router), Neon PostgreSQL, Prisma 7, BetterAuth, Vercel. No separate backend service — API routes and server actions live inside each Next.js app.
 

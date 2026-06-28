@@ -19,11 +19,9 @@ interface AuthShellProps {
 export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
   return (
     <div className="w-full">
-      <div className="font-su-display text-su-title-md font-bold text-su-ink mb-10">
-        Stashup
-      </div>
+      <img src="/logo.svg" alt="StashUp Logo" className="h-16 w-16 mx-auto block mb-10" />
 
-      <div className="space-y-2 mb-8">
+      <div className="space-y-2 mb-8 text-center">
         <h1 className="font-su-display text-su-display-sm font-bold text-su-ink leading-[1.1]">
           {title}
         </h1>

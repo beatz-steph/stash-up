@@ -22,7 +22,7 @@ export function OnboardingBanner({ status }: OnboardingBannerProps) {
           <span>You&apos;re all set 🎉</span>
         </h3>
         <p className="font-su-sans text-su-body-sm text-su-body">
-          Your Stashup account is fully verified and your first savings circle is ready.
+          Your StashUp account is fully verified and your first savings circle is ready.
         </p>
       </div>
     )
@@ -70,11 +70,10 @@ export function OnboardingBanner({ status }: OnboardingBannerProps) {
           return (
             <div
               key={stage.key}
-              className={`flex flex-col justify-between p-4 rounded-su-lg border transition-colors ${
-                isActive
+              className={`flex flex-col justify-between p-4 rounded-su-lg border transition-colors ${isActive
                   ? "bg-su-surface-soft/50 border-su-hairline"
                   : "border-transparent"
-              }`}
+                }`}
             >
               <div className="flex gap-3">
                 {/* Step circle indicator */}
@@ -97,9 +96,8 @@ export function OnboardingBanner({ status }: OnboardingBannerProps) {
                 {/* Step labels */}
                 <div className="space-y-0.5">
                   <h3
-                    className={`font-su-sans text-su-title-sm ${
-                      isActive ? "font-semibold text-su-ink" : isFinished ? "text-su-ink" : "text-su-muted"
-                    }`}
+                    className={`font-su-sans text-su-title-sm ${isActive ? "font-semibold text-su-ink" : isFinished ? "text-su-ink" : "text-su-muted"
+                      }`}
                   >
                     {stage.label}
                   </h3>

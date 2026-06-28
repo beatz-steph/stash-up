@@ -34,13 +34,13 @@ export function useSignInForm() {
       })
       if (error) {
         toast.error(error.message || "Invalid email or password")
+        setIsLoading(false)
         return
       }
       router.push("/")
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
-    } finally {
       setIsLoading(false)
     }
   })
