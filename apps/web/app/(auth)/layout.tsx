@@ -14,8 +14,8 @@ export default function AuthLayout({
       </div>
 
       {/* Left Column - Desktop Only full-bleed placeholder image */}
-      <div className="relative hidden w-1/2  lg:block lg:w-[45%] h-screen  p-4">
-        <div className="h-full w-full bg-su-surface-dark dark:bg-su-surface-dark-elevated rounded-2xl overflow-hidden relative pr-0">
+      <div className="relative hidden w-1/2  lg:block lg:w-[45%] h-screen  p-4 pr-0">
+        <div className="h-full w-full bg-su-surface-dark dark:bg-su-surface-dark-elevated rounded-2xl overflow-hidden relative">
           <Waves lineColor="#0052ff"
             backgroundColor="transparent"
             waveSpeedX={0.0125}

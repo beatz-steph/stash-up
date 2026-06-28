@@ -14,6 +14,11 @@ import {
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   return (
     <DropdownMenu>
@@ -21,10 +26,13 @@ export function ThemeToggle() {
         <Button 
           variant="outline" 
           size="icon" 
-          className="h-10 w-10 rounded-su-full bg-su-canvas border-su-hairline text-su-ink shadow-sm hover:bg-su-surface-soft transition-colors"
+          className="relative h-10 w-10 rounded-su-full bg-su-canvas border-su-hairline text-su-ink shadow-sm hover:bg-su-surface-soft transition-colors overflow-hidden"
         >
-          <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+          <Sun className={`h-[1.2rem] w-[1.2rem] transition-all ${mounted && theme === 'system' ? 'rotate-90 scale-0 opacity-0 absolute' : 'rotate-0 scale-100 dark:-rotate-90 dark:scale-0'}`} />
+          <Moon className={`absolute h-[1.2rem] w-[1.2rem] transition-all ${mounted && theme === 'system' ? 'rotate-90 scale-0 opacity-0' : 'rotate-90 scale-0 dark:rotate-0 dark:scale-100'}`} />
+          
+          <Monitor className={`absolute h-[1.2rem] w-[1.2rem] transition-all ${mounted && theme === 'system' ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-0 opacity-0'}`} />
+          
           <span className="sr-only">Toggle theme</span>
         </Button>
       </DropdownMenuTrigger>

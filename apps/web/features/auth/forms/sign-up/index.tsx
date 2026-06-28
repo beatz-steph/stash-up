@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
 import { Form } from "@workspace/ui/components/form"
 import { FormInput } from "@workspace/ui/form/input"
+import { FormPasswordInput } from "@workspace/ui/form/password-input"
 import { AuthShell } from "@/features/auth/components/auth-shell"
 import { useSignUpForm } from "./model"
 import type { UsernameStatus } from "./use-username-availability"
@@ -131,22 +132,20 @@ export function SignUpForm() {
             </div>
           ) : (
             <div className="space-y-5">
-              <FormInput
+              <FormPasswordInput
                 control={form.control}
                 name="password"
                 label="Password"
-                type="password"
                 placeholder="••••••••"
                 autoComplete="new-password"
                 disabled={isLoading}
                 description="At least 8 characters"
               />
 
-              <FormInput
+              <FormPasswordInput
                 control={form.control}
                 name="confirmPassword"
                 label="Confirm password"
-                type="password"
                 placeholder="••••••••"
                 autoComplete="new-password"
                 disabled={isLoading}

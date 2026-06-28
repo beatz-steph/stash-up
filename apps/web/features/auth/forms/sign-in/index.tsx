@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
 import { Form } from "@workspace/ui/components/form"
 import { FormInput } from "@workspace/ui/form/input"
+import { FormPasswordInput } from "@workspace/ui/form/password-input"
 import { AuthShell } from "@/features/auth/components/auth-shell"
 import { useSignInForm } from "./model"
 
@@ -40,11 +41,10 @@ export function SignInForm() {
             />
 
             <div className="relative">
-              <FormInput
+              <FormPasswordInput
                 control={form.control}
                 name="password"
                 label="Password"
-                type="password"
                 placeholder="••••••••"
                 autoComplete="current-password"
                 disabled={isLoading}
