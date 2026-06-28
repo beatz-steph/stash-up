@@ -14,42 +14,46 @@ CSS variables live in `packages/ui/src/styles/globals.css`.
 - **Single accent** — Stashup Blue (`#0052ff`) carries every primary CTA. Used scarcely; one or two blue moments per page section.
 - **Pill geometry** — every button is fully rounded (`rounded-su-pill`). Cards sit at `rounded-su-xl`. Sharp corners are absent.
 - **Three-mode rhythm** — pages rotate: white canvas → soft-gray elevation band → full-bleed dark hero.
-- **Monospace for money** — every Naira amount uses `font-feature-settings: 'tnum'` with Cal Sans for tabular alignment.
+- **Monospace for money** — every Naira amount uses `font-feature-settings: 'tnum'` with Geist Mono for tabular alignment.
 
 ---
 
 ## Typography
 
-**Cal Sans** (Google Fonts) is the single typeface for every element — headlines, body, navigation, buttons, captions, and numbers.
+- **Satoshi** (local variable font, weights 300–900) is the single typeface for everything — display headings, the Stashup wordmark, body copy, form fields, labels, buttons, navigation, and captions. Hierarchy comes from size + weight + color.
+- **Geist Mono** is used for currency values and numbers.
 
 ### Setup (Next.js)
 
-Cal Sans is loaded in both app layouts via `next/font/google` and exposed as the CSS variable `--font-cal-sans`:
+Satoshi ships as a variable font and is loaded in both app layouts via `next/font/local` from `app/fonts/`, exposed as the CSS variable `--font-sans`:
 
 ```tsx
 // apps/web/app/layout.tsx  &  apps/admin/app/layout.tsx
-import { Cal_Sans } from "next/font/google"
+import localFont from "next/font/local"
 
-const calSans = Cal_Sans({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-cal-sans",
+const satoshi = localFont({
+  src: [
+    { path: "./fonts/Satoshi-Variable.woff2", weight: "300 900", style: "normal" },
+    { path: "./fonts/Satoshi-VariableItalic.woff2", weight: "300 900", style: "italic" },
+  ],
+  variable: "--font-sans",
+  display: "swap",
 })
 ```
 
-The `--font-su-sans` (and its aliases `--font-su-display`, `--font-su-mono`) all resolve to `var(--font-cal-sans)` — you never need to reference the raw variable in components, just use the Tailwind utilities below.
+The font variables are remapped in `globals.css` so you can use the standard Tailwind font family utilities.
 
 ### Font Families
 
 | Token | CSS Variable | Tailwind | Use |
 |---|---|---|---|
-| Sans (primary) | `--font-su-sans` | `font-su-sans` | Everything — body, nav, buttons, captions |
-| Display (alias) | `--font-su-display` | `font-su-display` | Hero headlines (same font, alias for clarity) |
-| Mono (alias) | `--font-su-mono` | `font-su-mono` | Naira amounts and percentages (add `[font-feature-settings:'tnum']`) |
+| Sans (primary) | `--font-su-sans` | `font-su-sans` | Satoshi — body, nav, buttons, captions, inputs |
+| Display | `--font-su-display` | `font-su-display` | Satoshi — display headlines & wordmark (use `font-bold`) |
+| Mono | `--font-su-mono` | `font-su-mono` | Geist Mono — Naira amounts and numbers (with `[font-feature-settings:'tnum']`) |
 
 ### Type Scale
 
-Font-size tokens generate `text-su-*` utilities. Combine with weight, line-height, and tracking as shown.
+Font-size tokens are registered under Tailwind v4's `--text-*` namespace (in `globals.css`) and generate `text-su-*` utilities. Combine with weight, line-height, and tracking as shown.
 
 | Style | Tailwind Size | Weight | Line Height | Tracking | Family |
 |---|---|---|---|---|---|
@@ -61,8 +65,8 @@ Font-size tokens generate `text-su-*` utilities. Combine with weight, line-heigh
 | `title-lg` | `text-su-title-lg` | `font-normal` | `leading-[1.13]` | `tracking-su-title-lg` | `font-su-sans` |
 | `title-md` | `text-su-title-md` | `font-semibold` | `leading-[1.33]` | `tracking-normal` | `font-su-sans` |
 | `title-sm` | `text-su-title-sm` | `font-semibold` | `leading-[1.25]` | `tracking-normal` | `font-su-sans` |
-| `body-md` | `text-su-body` | `font-normal` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
-| `body-strong` | `text-su-body` | `font-bold` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
+| `body-md` | `text-su-body-md` | `font-normal` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
+| `body-strong` | `text-su-body-md` | `font-bold` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
 | `body-sm` | `text-su-body-sm` | `font-normal` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
 | `caption` | `text-su-caption` | `font-normal` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
 | `caption-strong` | `text-su-caption-sm` | `font-semibold` | `leading-relaxed` | `tracking-normal` | `font-su-sans` |
@@ -81,8 +85,8 @@ display-sm:      font-su-sans text-su-display-sm font-normal leading-[1.11] trac
 title-lg:        font-su-sans text-su-title-lg font-normal leading-[1.13] tracking-su-title-lg
 title-md:        font-su-sans text-su-title-md font-semibold leading-[1.33]
 title-sm:        font-su-sans text-su-title-sm font-semibold leading-[1.25]
-body-md:         font-su-sans text-su-body font-normal leading-relaxed
-body-strong:     font-su-sans text-su-body font-bold leading-relaxed
+body-md:         font-su-sans text-su-body-md font-normal leading-relaxed
+body-strong:     font-su-sans text-su-body-md font-bold leading-relaxed
 body-sm:         font-su-sans text-su-body-sm font-normal leading-relaxed
 caption:         font-su-sans text-su-caption font-normal leading-relaxed
 caption-strong:  font-su-sans text-su-caption-sm font-semibold leading-relaxed
@@ -246,7 +250,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
   <h1 className="font-su-display text-su-display-mega font-normal leading-none tracking-su-display-mega text-su-on-dark max-w-2xl">
     Save together, win together.
   </h1>
-  <p className="font-su-sans text-su-body font-normal leading-relaxed text-su-on-dark-soft mt-su-lg max-w-xl">
+  <p className="font-su-sans text-su-body-md font-normal leading-relaxed text-su-on-dark-soft mt-su-lg max-w-xl">
     Stashup brings your Ajo circle online — automated contributions, transparent payouts, zero drama.
   </p>
   <div className="flex gap-su-md mt-su-xl">
@@ -275,7 +279,7 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
   <h3 className="font-su-sans text-su-title-md font-semibold leading-[1.33] text-su-ink">
     Automated contributions
   </h3>
-  <p className="font-su-sans text-su-body font-normal leading-relaxed text-su-body mt-su-xs">
+  <p className="font-su-sans text-su-body-md font-normal leading-relaxed text-su-body mt-su-xs">
     Never miss a turn — direct debit handles every cycle.
   </p>
 </div>
@@ -324,12 +328,12 @@ Complete Tailwind class strings for every component. Use these verbatim when bui
 
 ```tsx
 // text-input
-<input className="bg-su-canvas text-su-ink font-su-sans text-su-body font-normal rounded-su-md px-4 py-[14px] h-12 border border-su-hairline w-full
+<input className="bg-su-canvas text-su-ink font-su-sans text-su-body-md font-normal rounded-su-md px-4 py-[14px] h-12 border border-su-hairline w-full
   focus:outline-none focus:border-su-primary focus:ring-2 focus:ring-su-primary/20
   placeholder:text-su-muted" />
 
 // search-input-pill
-<input className="bg-su-surface-strong text-su-ink font-su-sans text-su-body font-normal rounded-su-pill px-5 py-3 h-11 border-0 w-full
+<input className="bg-su-surface-strong text-su-ink font-su-sans text-su-body-md font-normal rounded-su-pill px-5 py-3 h-11 border-0 w-full
   focus:outline-none focus:ring-2 focus:ring-su-primary/20
   placeholder:text-su-muted" />
 ```

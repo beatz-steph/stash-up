@@ -34,7 +34,7 @@ export function FormInput<
             <Input {...field} {...props} value={(field.value as string) ?? ""} />
           </FormControl>
           {description && (
-            <p className="text-[0.8rem] text-muted-foreground">{description}</p>
+            <p className="font-su-sans text-su-caption text-su-muted">{description}</p>
           )}
           <FormMessage />
         </FormItem>

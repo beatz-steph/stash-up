@@ -196,27 +196,27 @@
   --color-su-semantic-down: var(--su-semantic-down);
   --color-su-accent-yellow: var(--su-accent-yellow);
 
-  /* ── Font Family — Cal Sans is the single typeface for all text ── */
-  --font-su-sans: var(--font-cal-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-su-display: var(--font-su-sans);
-  --font-su-mono: var(--font-su-sans);
+  /* ── Font Family — Satoshi for all UI/display, Geist Mono for numbers ── */
+  --font-su-sans: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;  /* Satoshi — body, labels, inputs, buttons, captions, nav */
+  --font-su-display: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;                    /* Satoshi — display headings + wordmark */
+  --font-su-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;                             /* Geist Mono — money/numbers */
 
-  /* ── Font Sizes ── */
-  --font-size-su-display-mega: 5rem;       /* 80px */
-  --font-size-su-display-xl: 4rem;         /* 64px */
-  --font-size-su-display-lg: 3.25rem;      /* 52px */
-  --font-size-su-display-md: 2.75rem;      /* 44px */
-  --font-size-su-display-sm: 2.25rem;      /* 36px */
-  --font-size-su-title-lg: 2rem;           /* 32px */
-  --font-size-su-title-md: 1.125rem;       /* 18px */
-  --font-size-su-title-sm: 1rem;           /* 16px */
-  --font-size-su-body: 1rem;              /* 16px */
-  --font-size-su-body-sm: 0.875rem;        /* 14px */
-  --font-size-su-caption: 0.8125rem;       /* 13px */
-  --font-size-su-caption-sm: 0.75rem;      /* 12px */
-  --font-size-su-number: 1.125rem;         /* 18px */
-  --font-size-su-button: 1rem;             /* 16px */
-  --font-size-su-nav: 0.875rem;            /* 14px */
+  /* ── Font Sizes (Tailwind v4 uses the --text-* namespace to generate text-* utilities) ── */
+  --text-su-display-mega: 5rem;       /* 80px */
+  --text-su-display-xl: 4rem;         /* 64px */
+  --text-su-display-lg: 3.25rem;      /* 52px */
+  --text-su-display-md: 2.75rem;      /* 44px */
+  --text-su-display-sm: 2.25rem;      /* 36px */
+  --text-su-title-lg: 2rem;           /* 32px */
+  --text-su-title-md: 1.125rem;       /* 18px */
+  --text-su-title-sm: 1rem;           /* 16px */
+  --text-su-body-md: 1rem;            /* 16px */
+  --text-su-body-sm: 0.875rem;        /* 14px */
+  --text-su-caption: 0.8125rem;       /* 13px */
+  --text-su-caption-sm: 0.75rem;      /* 12px */
+  --text-su-number: 1.125rem;         /* 18px */
+  --text-su-button: 1rem;             /* 16px */
+  --text-su-nav: 0.875rem;            /* 14px */
 
   /* ── Letter Spacing ── */
   --tracking-su-display-mega: -0.125rem;   /* -2px */
@@ -279,4 +279,17 @@
   --sidebar-accent-foreground: var(--su-ink);
   --sidebar-border: var(--su-hairline);
   --sidebar-ring: var(--su-primary);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--su-ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--su-canvas) inset;
+          box-shadow: 0 0 0 1000px var(--su-canvas) inset;
+  caret-color: var(--su-ink);
+  border-color: var(--su-hairline);
+  transition: background-color 9999s ease-in-out 0s;
 }
