@@ -13,6 +13,14 @@ export const auth = betterAuth({
   plugins: [username()],
   user: {
     additionalFields: {
+      firstName: {
+        type: "string",
+        required: true,
+      },
+      lastName: {
+        type: "string",
+        required: true,
+      },
       phone: {
         type: "string",
         required: false,

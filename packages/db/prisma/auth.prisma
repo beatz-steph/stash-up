@@ -1,13 +1,16 @@
 model User {
   id            String    @id
   name          String
+  firstName     String?
+  lastName      String?
   email         String    @unique
   emailVerified Boolean
   image         String?
   createdAt     DateTime
   updatedAt     DateTime
   phone         String?
-  username      String    @unique   // @handle — used for circle invites
+  username      String    @unique   // @handle — used for circle invites (normalized)
+  displayUsername String?            // non-normalized handle stored by BetterAuth username plugin
   lifetimeDefaultCount Int @default(0)   // platform-level reputation
   blockedFromCircles   Boolean @default(false)
 
@@ -17,6 +20,7 @@ model User {
   sentInvites     CircleInvite[] @relation("InvitedBy")
   receivedInvites CircleInvite[] @relation("InvitedUser")
   createdCircles  Circle[]       @relation("CircleCreator")
+  withdrawalAccount WithdrawalAccount?
 
   @@map("user")
 }

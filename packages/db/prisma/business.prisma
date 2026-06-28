@@ -314,3 +314,17 @@ model AdminAuditLog {
   @@index([entityType, entityId])
   @@map("admin_audit_logs")
 }
+
+model WithdrawalAccount {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankCode      String
+  bankName      String
+  accountNumber String
+  accountName   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("withdrawal_account")
+}
