@@ -233,22 +233,24 @@ async function triggerPayout(cycleId: string) {
 
 ## 8. Nomba API Integration
 
+Import from `apps/web/lib/nomba-client.ts` — never call Nomba APIs directly from other files.
+
 ```typescript
-// apps/web/lib/nomba-client.ts
-async function getNombaToken() {
-  const config = await prisma.nombaConfig.findFirst({ where: { status: "ACTIVE" } });
-  // POST /v1/auth/token/intiate
-  // Returns access_token valid for ~1hr — cache it
-}
-
-// Create VA: POST /v1/accounts
-// accountRef = "membership_{membershipId}" (our lookup key on webhooks)
-// No expiryDate, no expectedAmount (permanent VA)
-
-// Transfer: POST /v2/transfers/bank
-// amount in NAIRA (not kobo): payout.amountMinor / 100
-// merchantTxRef: "payout_{cycleId}"
+import {
+  createVirtualAccount,
+  initiateSubAccountBankTransfer,
+  getSubAccountBalance,
+} from "@/lib/nomba-client";
 ```
+
+**Key rules:**
+- All operations are scoped to the sub-account via `NOMBA_SUB_ACCOUNT_ID` — never the parent account
+- `NOMBA_ACCOUNT_ID` (parent) is the `accountId` HTTP header required on every request — injected automatically by the client
+- Amounts to Nomba are in **full Naira** — always divide kobo values by 100 before sending: `amountMinor / 100`
+- Virtual account `accountRef` must be `"membership_{membershipId}"` — this is the key used to look up which membership a webhook payment belongs to
+- Payout `merchantTxRef` must be `"payout_{cycleId}"` — Nomba's idempotency key
+- NEVER call `initiateSubAccountBankTransfer` inside a `$transaction` block — call it AFTER the transaction commits
+- Sub-account bank transfers must be enabled by Nomba before they work (contact support)
 
 ---
 
