@@ -2,95 +2,180 @@
 
 import Link from "next/link"
 import { Button } from "@workspace/ui/components/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { Form } from "@workspace/ui/components/form"
 import { FormInput } from "@workspace/ui/form/input"
+import { AuthShell } from "@/features/auth/components/auth-shell"
 import { useSignUpForm } from "./model"
+import type { UsernameStatus } from "./use-username-availability"
+
+function StepProgress({ step }: { step: 1 | 2 }) {
+  return (
+    <div className="mb-6 flex items-center gap-2" aria-hidden>
+      {[1, 2].map((n) => (
+        <span
+          key={n}
+          className={`h-1.5 flex-1 rounded-su-pill transition-colors ${
+            n <= step ? "bg-su-primary" : "bg-su-surface-strong"
+          }`}
+        />
+      ))}
+    </div>
+  )
+}
+
+function UsernameHint({ status }: { status: UsernameStatus }) {
+  if (status === "checking") {
+    return (
+      <p className="mt-1.5 font-su-sans text-su-caption text-su-muted">
+        Checking availability…
+      </p>
+    )
+  }
+  if (status === "available") {
+    return (
+      <p className="mt-1.5 font-su-sans text-su-caption font-medium text-su-semantic-up">
+        Username is available
+      </p>
+    )
+  }
+  if (status === "taken") {
+    return (
+      <p className="mt-1.5 font-su-sans text-su-caption font-medium text-su-semantic-down">
+        That username is already taken
+      </p>
+    )
+  }
+  if (status === "error") {
+    return (
+      <p className="mt-1.5 font-su-sans text-su-caption text-su-muted">
+        Couldn&apos;t check availability right now
+      </p>
+    )
+  }
+  return null
+}
 
 export function SignUpForm() {
-  const { form, onSubmit, isLoading, error } = useSignUpForm()
+  const { form, onSubmit, isLoading, step, backToStep1, usernameStatus } =
+    useSignUpForm()
 
   return (
-    <Card className="w-full max-w-md border-border/40 bg-card/60 shadow-2xl backdrop-blur-md transition-all duration-300 hover:border-border/80">
-      <CardHeader className="space-y-1 text-center">
-        <CardTitle className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-          Create an account
-        </CardTitle>
-        <CardDescription className="text-muted-foreground/80">
-          Enter your details below to create your thrift account and join circles
-        </CardDescription>
-      </CardHeader>
+    <AuthShell
+      title="Create your account"
+      subtitle={
+        step === 1
+          ? "Tell us a bit about you"
+          : "Now secure your account with a password"
+      }
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link
+            href="/sign-in"
+            className="font-semibold text-su-primary hover:text-su-primary-active transition-colors"
+          >
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <StepProgress step={step} />
+
       <Form {...form}>
-        <form onSubmit={onSubmit}>
-          <CardContent className="space-y-4">
-            {error && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm font-medium text-destructive animate-in fade-in zoom-in duration-200">
-                {error}
+        <form onSubmit={onSubmit} className="space-y-6">
+          {step === 1 ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <FormInput
+                  control={form.control}
+                  name="firstName"
+                  label="First name"
+                  type="text"
+                  placeholder="Ada"
+                  autoComplete="given-name"
+                />
+                <FormInput
+                  control={form.control}
+                  name="lastName"
+                  label="Last name"
+                  type="text"
+                  placeholder="Lovelace"
+                  autoComplete="family-name"
+                />
               </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
+
+              <div>
+                <FormInput
+                  control={form.control}
+                  name="username"
+                  label="Username"
+                  type="text"
+                  placeholder="adalovelace"
+                  autoComplete="username"
+                />
+                <UsernameHint status={usernameStatus} />
+              </div>
+
               <FormInput
                 control={form.control}
-                name="name"
-                label="Full Name"
-                type="text"
-                placeholder="John Doe"
-                autoComplete="name"
-                disabled={isLoading}
-                className="transition-all duration-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                name="email"
+                label="Email Address"
+                type="email"
+                placeholder="name@example.com"
+                autoComplete="email"
               />
+
+              <Button type="submit" className="w-full" size="lg">
+                Continue
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-5">
               <FormInput
                 control={form.control}
-                name="username"
-                label="Username (@tag)"
-                type="text"
-                placeholder="johndoe"
-                autoComplete="username"
+                name="password"
+                label="Password"
+                type="password"
+                placeholder="••••••••"
+                autoComplete="new-password"
                 disabled={isLoading}
-                className="transition-all duration-200 focus:border-indigo-500 focus:ring-indigo-500/20"
+                description="At least 8 characters"
               />
+
+              <FormInput
+                control={form.control}
+                name="confirmPassword"
+                label="Confirm password"
+                type="password"
+                placeholder="••••••••"
+                autoComplete="new-password"
+                disabled={isLoading}
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  size="lg"
+                  onClick={backToStep1}
+                  disabled={isLoading}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  size="lg"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Creating..." : "Create account"}
+                </Button>
+              </div>
             </div>
-            <FormInput
-              control={form.control}
-              name="email"
-              label="Email Address"
-              type="email"
-              placeholder="name@example.com"
-              autoComplete="email"
-              disabled={isLoading}
-              className="transition-all duration-200 focus:border-indigo-500 focus:ring-indigo-500/20"
-            />
-            <FormInput
-              control={form.control}
-              name="password"
-              label="Password"
-              type="password"
-              placeholder="••••••••"
-              autoComplete="new-password"
-              disabled={isLoading}
-              className="transition-all duration-200 focus:border-indigo-500 focus:ring-indigo-500/20"
-            />
-          </CardContent>
-          <CardFooter className="flex flex-col space-y-4 pt-4">
-            <Button
-              type="submit"
-              className="w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold transition-all duration-300 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:hover:scale-100 cursor-pointer"
-              disabled={isLoading}
-            >
-              {isLoading ? "Creating account..." : "Sign Up"}
-            </Button>
-            <div className="text-center text-sm text-muted-foreground/80">
-              Already have an account?{" "}
-              <Link
-                href="/sign-in"
-                className="font-medium text-indigo-400 underline-offset-4 hover:text-indigo-300 hover:underline transition-colors"
-              >
-                Sign in
-              </Link>
-            </div>
-          </CardFooter>
+          )}
         </form>
       </Form>
-    </Card>
+    </AuthShell>
   )
 }

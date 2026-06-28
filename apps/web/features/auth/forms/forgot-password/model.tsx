@@ -1,43 +1,39 @@
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "../../../../lib/auth-client"
+import { useState } from "react"
+import { toast } from "@workspace/ui/components/sonner"
 
-export const signInSchema = z.object({
+export const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
 })
 
-export type SignInFormValues = z.infer<typeof signInSchema>
+export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>
 
-export function useSignInForm() {
-  const router = useRouter()
+export function useForgotPasswordForm() {
   const [isLoading, setIsLoading] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
 
-  const form = useForm<SignInFormValues>({
-    resolver: zodResolver(signInSchema),
+  const form = useForm<ForgotPasswordFormValues>({
+    resolver: zodResolver(forgotPasswordSchema),
     defaultValues: {
       email: "",
-      password: "",
     },
   })
 
   const onSubmit = form.handleSubmit(async (values) => {
     setIsLoading(true)
     try {
-      const { error } = await authClient.signIn.email({
+      const { error } = await authClient.requestPasswordReset({
         email: values.email,
-        password: values.password,
+        redirectTo: `${window.location.origin}/reset-password`,
       })
       if (error) {
-        toast.error(error.message || "Invalid email or password")
+        toast.error(error.message || "Failed to send reset email")
         return
       }
-      router.push("/")
-      router.refresh()
+      setIsSuccess(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
     } finally {
@@ -45,5 +41,5 @@ export function useSignInForm() {
     }
   })
 
-  return { form, onSubmit, isLoading }
+  return { form, onSubmit, isLoading, isSuccess }
 }
