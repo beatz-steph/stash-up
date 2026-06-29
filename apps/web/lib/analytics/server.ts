@@ -1,9 +1,11 @@
 import { PostHog } from "posthog-node"
 import type { AnalyticsEvent, AnalyticsProps } from "./events"
+import { isAnalyticsEnabled } from "./config"
 
 let client: PostHog | null = null
 
 function getServerClient(): PostHog | null {
+  if (!isAnalyticsEnabled()) return null
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
   if (!key) return null
   if (!client) {
