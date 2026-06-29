@@ -94,7 +94,7 @@ async function nombaFetch(path: string, init: RequestInit = {}): Promise<Respons
     headers: {
       "Content-Type": "application/json",
       accountId: ACCOUNT_ID,
-      Authorization: token,
+      Authorization: `Bearer ${token}`,
       ...(init.headers ?? {}),
     },
   });
@@ -163,5 +163,30 @@ export async function getSubAccountBalance() {
   return {
     availableBalanceMinor: Math.round(data.data.availableBalance * 100),
     ledgerBalanceMinor: Math.round(data.data.ledgerBalance * 100),
+  };
+}
+
+interface ResolveBankAccountParams {
+  accountNumber: string;
+  bankCode: string;
+}
+
+export async function resolveBankAccount(params: ResolveBankAccountParams) {
+  const res = await nombaFetch("/v1/transfers/bank/lookup", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Name enquiry failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  if (data.code !== "00") {
+    throw new Error(`Name enquiry unsuccessful: ${data.description}`);
+  }
+
+  return {
+    accountName: data.data.accountName as string,
   };
 }
