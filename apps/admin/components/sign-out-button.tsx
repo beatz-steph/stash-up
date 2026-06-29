@@ -25,11 +25,12 @@ export function SignOutButton() {
   return (
     <Button
       variant="outline"
+      size="sm"
       disabled={isPending}
       onClick={handleSignOut}
-      className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors cursor-pointer"
+      className="bg-su-canvas border-su-hairline text-su-body hover:bg-su-surface-soft hover:text-su-ink font-su-sans"
     >
-      {isPending ? "Signing out..." : "Sign Out"}
+      {isPending ? "Signing out..." : "Sign out"}
     </Button>
   )
 }

@@ -37,8 +37,8 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn("antialiased h-full", satoshi.variable, fontMono.variable, "font-sans")}
     >
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
-        <ThemeProvider>
+      <body className="min-h-full bg-su-surface-soft text-su-ink font-su-sans">
+        <ThemeProvider attribute="class" forcedTheme="light">
           <Providers>
             {children}
             <Toaster richColors />
