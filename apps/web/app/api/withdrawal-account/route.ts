@@ -5,6 +5,9 @@ import { auth } from "@/lib/auth"
 import { requireVerifiedEmail } from "@/lib/access-control"
 import { SaveWithdrawalAccountReqSchema } from "./dto/withdrawal-account.dto"
 import { validateRequestBody } from "@/lib/api/validate"
+import { captureServer } from "@/lib/analytics/server"
+import { AnalyticsEvent } from "@/lib/analytics/events"
+import { createNotification } from "@/lib/notifications"
 
 const accountSelect = {
   bankCode: true,
@@ -55,6 +58,16 @@ export async function POST(request: Request) {
       create: { userId: session.user.id, bankCode, bankName, accountNumber, accountName },
       select: accountSelect,
     })
+    
+    await captureServer(session.user.id, AnalyticsEvent.WithdrawalAdded)
+    await createNotification({
+      userId: session.user.id,
+      type: "GENERIC",
+      title: "Withdrawal account linked",
+      body: `Payouts will be sent to your ${bankName} account.`,
+      link: "/",
+    })
+    
     return NextResponse.json(record)
   } catch (error) {
     console.error("Error saving withdrawal account:", error)

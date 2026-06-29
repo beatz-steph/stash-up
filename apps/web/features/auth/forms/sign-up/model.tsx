@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation"
 import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "../../../../lib/auth-client"
 import { useUsernameAvailability } from "../../queries/use-username-availability"
+import { track, identifyUser } from "@/lib/analytics/client"
+import { AnalyticsEvent } from "@/lib/analytics/events"
 
 export const signUpSchema = z
   .object({
@@ -77,7 +79,7 @@ export function useSignUpForm() {
   const submitStep2 = form.handleSubmit(async (values) => {
     setIsLoading(true)
     try {
-      const { error } = await authClient.signUp.email({
+      const { data, error } = await authClient.signUp.email({
         email: values.email,
         password: values.password,
         name: `${values.firstName} ${values.lastName}`.trim(),
@@ -90,6 +92,8 @@ export function useSignUpForm() {
         setIsLoading(false)
         return
       }
+      if (data?.user?.id) identifyUser(data.user.id)
+      track(AnalyticsEvent.SignupCompleted)
       toast.success("Account created — welcome to StashUp!")
       router.push("/")
       router.refresh()

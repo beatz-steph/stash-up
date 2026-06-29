@@ -2,6 +2,7 @@
 
 import { Button } from "@workspace/ui/components/button"
 import { authClient } from "@/lib/auth-client"
+import { resetUser } from "@/lib/analytics/client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
@@ -14,6 +15,7 @@ export function SignOutButton() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          resetUser()
           router.push("/sign-in")
           router.refresh()
         },

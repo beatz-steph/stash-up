@@ -8,6 +8,9 @@ import { WelcomeEmail } from "./email/templates/welcome"
 import { PasswordResetEmail } from "./email/templates/password-reset"
 import { EmailVerificationEmail } from "./email/templates/email-verification"
 import { PasswordChangedEmail } from "./email/templates/password-changed"
+import { captureServer } from "@/lib/analytics/server"
+import { AnalyticsEvent } from "@/lib/analytics/events"
+import { createNotification } from "@/lib/notifications"
 
 // Email verification model: "gate the money boundary, not the front door".
 // - Verification email is sent on sign-up (sendOnSignUp).
@@ -54,6 +57,14 @@ export const auth = betterAuth({
         to: user.email,
         subject: "Welcome to StashUp!",
         react: React.createElement(WelcomeEmail, { firstName }),
+      })
+      await captureServer(user.id, AnalyticsEvent.EmailVerified)
+      await createNotification({
+        userId: user.id,
+        type: "WELCOME",
+        title: "Welcome to StashUp 🎉",
+        body: "Your email is verified. Add a withdrawal account to start a savings circle.",
+        link: "/onboarding/withdrawal-account",
       })
     },
   },

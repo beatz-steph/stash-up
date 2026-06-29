@@ -7,6 +7,8 @@ import { fetchOnboardingStatus } from "@/lib/api/data/onboarding"
 import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
 import { serverApiOptions } from "@/lib/api/server"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
+import { PostHogIdentify } from "@/components/posthog-identify"
+import { NotificationBell } from "@/features/notifications/components/notification-bell"
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({
@@ -29,6 +31,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-su-canvas text-su-ink flex flex-col">
+      <PostHogIdentify userId={user.id} />
       {/* Real Top Navigation */}
       <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-6 sm:px-8 flex items-center justify-between">
         <span className="font-su-display text-su-title-md font-semibold text-su-ink tracking-tight">
@@ -38,6 +41,7 @@ export default async function DashboardPage() {
           <span className="font-su-sans text-su-nav font-medium text-su-body">
             @{user.username}
           </span>
+          <NotificationBell />
           <SignOutButton />
         </div>
       </nav>
