@@ -28,12 +28,40 @@ DB context, decide the match:
    so it's unit-testable).
 
 ## B. Webhook business handler (fills the Sprint 1 dispatch)
-On `eventType` = inbound payment (verify exact name against Nomba):
+On `event_type = payment_success`:
 - Run the matcher, then **inside `prisma.$transaction`**: persist `InboundTransfer`, apply the
   contribution upsert, increment `Cycle.potCollectedMinor`, and re-evaluate cycle status:
   - `potCollectedMinor >= potExpectedMinor` → `READY_TO_PAYOUT`.
   - else stays `COLLECTING` (first contribution flips `OPEN`→`COLLECTING`).
-- Always 200 (webhook contract). Idempotent per `requestId` (already deduped in Sprint 1).
+- Always 200 (webhook contract).
+
+### B1. ⚠️ MUST FIX the Sprint 1 dedup hazard before real dispatch runs here
+The Sprint 1 receiver dedups on **"seen"** (Redis `claimWebhookEvent`) *before* dispatch, and
+returns 500 if dispatch throws. That combination loses money: claim succeeds → receipt
+inserted → dispatch throws → 500 → Nomba retries → **the Redis claim already exists → deduped →
+200 → dispatch never re-runs → the payment is silently dropped.** It's harmless in Sprint 1
+only because dispatch is a no-op stub. Here dispatch moves real money, so dedup must key on
+**completion, not first sight.**
+
+Required change to `app/api/webhooks/nomba/route.ts` (+ tests):
+1. Insert `WebhookReceipt` with `processed: false` (the model already has `processed`,
+   `processedAt`, `processingError`).
+2. Run dispatch **inside** its own try; on success set `processed: true`, `processedAt: now()`;
+   on failure set `processingError` and return non-200 **without** leaving a dedup that blocks
+   reprocessing.
+3. The dedup gate must allow re-processing an **unprocessed** receipt on retry. Either:
+   - drop the Redis claim and dedup via the DB receipt — `findUnique(provider, requestId)`:
+     exists & `processed` → 200 stop; exists & not processed → re-dispatch; absent → insert +
+     dispatch (catch `P2002` for the concurrent-delivery race); **or**
+   - keep the Redis claim but **release it** (`DEL`) when dispatch fails.
+4. Dispatch itself must be **idempotent** (it already relies on DB constraints: `Contribution`
+   `@@unique(cycleId, membershipId)`, and Sprint 5's `Payout.cycleId @unique`), so a re-delivery
+   that partially applied can't double-count.
+5. Tests: dispatch throws → receipt stays `processed:false` + non-200; **retry of the same
+   `requestId` re-runs dispatch** and lands `processed:true`; a genuinely-completed event is not
+   reprocessed; concurrent duplicate (`P2002`) is handled.
+6. Runbook (`docs/runbooks/webhook-failures.md`): document finding + replaying
+   `processed:false` receipts.
 
 ## C. Deadline / default sweep (`app/api/cron/cycle-sweep/route.ts` or a server action)
 - For cycles past `deadline` not fully collected → `AWAITING_RESOLUTION`; mark missing
@@ -50,8 +78,10 @@ On `eventType` = inbound payment (verify exact name against Nomba):
 - **Matcher unit tests:** unknown VA → UNMATCHED; exact → MATCHED/COMPLETE; underpay → UNDERPAID/
   PARTIAL; overpay → OVERPAID + buffer; second payment completing a PARTIAL; payment to a member
   with no open cycle.
-- **Webhook handler:** updates pot + flips to READY_TO_PAYOUT at threshold; duplicate event
-  no-ops; transaction rolls back on error.
+- **Webhook handler:** updates pot + flips to READY_TO_PAYOUT at threshold; transaction rolls
+  back on error. **Dedup-on-completion (B1):** a completed event re-delivered → no-op; a
+  dispatch failure leaves the receipt `processed:false` and **re-delivery reprocesses it**;
+  concurrent duplicate handled.
 - **Sweep:** overdue cycle → AWAITING_RESOLUTION + defaults counted.
 - **Frontend:** contribution states + pot progress render from fixtures.
 
@@ -65,6 +95,8 @@ On `eventType` = inbound payment (verify exact name against Nomba):
 - [ ] Inbound transfers create/upsert contributions correctly for all match outcomes (tested).
 - [ ] Cycle advances to READY_TO_PAYOUT exactly when the pot is met; webhook idempotent +
       transactional.
+- [ ] **Dedup hazard fixed (B1):** dedup keys on `processed`, dispatch failures are retryable,
+      no payment can be silently dropped — covered by tests.
 - [ ] Overdue cycles + defaults handled by the sweep. UNMATCHED/OVER/UNDER land in the queue.
 - [ ] Docs + typecheck/lint/tests green.
 
