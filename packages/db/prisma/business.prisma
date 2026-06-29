@@ -94,6 +94,20 @@ enum ConfigStatus {
   INVALID
 }
 
+enum NotificationType {
+  WELCOME
+  EMAIL_VERIFIED
+  CIRCLE_INVITE
+  CIRCLE_JOINED
+  CIRCLE_ACTIVATED
+  CONTRIBUTION_DUE
+  CONTRIBUTION_RECEIVED
+  PAYOUT_SENT
+  PAYOUT_RECEIVED
+  DEFAULT_WARNING
+  GENERIC
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model Circle {
@@ -327,4 +341,22 @@ model WithdrawalAccount {
   updatedAt     DateTime @updatedAt
 
   @@map("withdrawal_account")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(GENERIC)
+  title     String
+  body      String
+  link      String?          // optional in-app deep link, e.g. "/circles/abc123"
+  metadata  Json?            // optional structured context (circleId, cycleId, …) — no PII
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notification")
 }
