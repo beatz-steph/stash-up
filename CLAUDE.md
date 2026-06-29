@@ -165,7 +165,10 @@ string URLs, never Prisma in the UI layer).
 Order is mandatory:
 1. Capture raw body (disable body parser — use `req.text()`)
 2. Dedup: `INSERT WebhookReceipt` on `(provider, providerEventId)` — duplicate → 200 OK stop
-3. Verify HmacSHA256 `nomba-signature` header (timing-safe `crypto.timingSafeEqual`)
+3. Verify the `nomba-signature` header: HmacSHA256 (Base64) of the colon-joined string
+   `{event_type}:{requestId}:{userId}:{walletId}:{transactionId}:{type}:{time}:{responseCode}:{nomba-timestamp}`
+   (fields from `data.merchant.*`/`data.transaction.*` + the `nomba-timestamp` header) keyed by
+   `NOMBA_SIGNATURE_KEY` (dashboard "signature key"). Compare timing-safe. NOT a raw-body HMAC.
 4. Business logic inside `prisma.$transaction()`
 5. Always return 200 — Nomba retries on non-200
 
@@ -202,7 +205,9 @@ ADMIN_BETTER_AUTH_SECRET=
 ADMIN_BETTER_AUTH_URL=http://localhost:3001
 NOMBA_CLIENT_ID=
 NOMBA_CLIENT_SECRET=
-NOMBA_WEBHOOK_SECRET=
+NOMBA_ACCOUNT_ID=
+NOMBA_SUB_ACCOUNT_ID=
+NOMBA_SIGNATURE_KEY=
 NOMBA_BASE_URL=https://api.nomba.com
 RESEND_API_KEY=
 ```

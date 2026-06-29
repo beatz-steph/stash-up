@@ -118,23 +118,38 @@ export async function POST(req: NextRequest) {
   });
   if (existing) return NextResponse.json({ ok: true });
 
-  // 3. Verify signature
+  // 3. Verify signature — Nomba signs a COLON-JOINED FIELD STRING (not the raw body),
+  //    HmacSHA256 → Base64, keyed by the dashboard "signature key" (NOMBA_SIGNATURE_KEY).
   const signature = req.headers.get("nomba-signature") ?? "";
+  const timestamp = req.headers.get("nomba-timestamp") ?? "";
+  const tx = payload.data?.transaction ?? {};
+  const merchant = payload.data?.merchant ?? {};
+  const signedString = [
+    payload.event_type,
+    payload.requestId,
+    merchant.userId,
+    merchant.walletId,
+    tx.transactionId,
+    tx.type,
+    tx.time,
+    tx.responseCode === "null" ? "" : (tx.responseCode ?? ""),
+    timestamp,
+  ].join(":");
   const expected = crypto
-    .createHmac("sha256", process.env.NOMBA_WEBHOOK_SECRET!)
-    .update(rawBody)
+    .createHmac("sha256", process.env.NOMBA_SIGNATURE_KEY!)
+    .update(signedString)
     .digest("base64");
-  const signatureValid = crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  );
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  const signatureValid =
+    sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
 
   // 4. Insert receipt (even if invalid — never drop)
   await prisma.webhookReceipt.create({
     data: {
       provider: "NOMBA",
       providerEventId,
-      eventType: payload.event ?? "unknown",
+      eventType: payload.event_type ?? "unknown",
       payloadHash: crypto.createHash("sha256").update(rawBody).digest("hex"),
       signatureValid,
       rawPayload: rawBody,
