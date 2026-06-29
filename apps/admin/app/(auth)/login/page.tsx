@@ -7,10 +7,10 @@ import { z } from "zod"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 import { Button } from "@workspace/ui/components/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { Form } from "@workspace/ui/components/form"
 import { FormInput } from "@workspace/ui/form/input"
 import { toast } from "@workspace/ui/components/sonner"
+import { FormPasswordInput } from "@workspace/ui/form/password-input"
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -22,108 +22,82 @@ type LoginFormValues = z.infer<typeof loginSchema>
 export default function AdminLoginPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+    defaultValues: { email: "", password: "" },
   })
 
   const onSubmit = form.handleSubmit(async (values) => {
     setIsLoading(true)
-    setError(null)
     try {
-      const { error: authError } = await authClient.signIn.email({
+      const { error } = await authClient.signIn.email({
         email: values.email,
         password: values.password,
       })
-      if (authError) {
-        setError(authError.message || "Invalid credentials")
-      } else {
-        toast.success("Successfully logged in as Admin!")
-        router.push("/")
-        router.refresh()
+      if (error) {
+        toast.error(error.message || "Invalid credentials")
+        return
       }
+      toast.success("Signed in")
+      router.push("/")
+      router.refresh()
     } catch (err) {
-      const message = err instanceof Error ? err.message : "An unexpected error occurred"
-      setError(message)
+      toast.error(err instanceof Error ? err.message : "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
   })
 
   return (
-    <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-12 text-slate-100">
-      {/* Background neon glows */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-500/10 blur-[120px]" />
-      </div>
-
-      <div className="w-full max-w-md space-y-6">
-        <div className="flex flex-col items-center space-y-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 font-bold text-white shadow-lg shadow-purple-500/20">
-            SU
+    <div className="flex min-h-svh flex-col items-center justify-center bg-su-surface-soft px-4 py-12">
+      <div className="w-full max-w-[400px]">
+        <div className="mb-8 flex flex-col items-center gap-2.5 text-center">
+          <div className="flex items-center gap-2.5">
+            <span className="font-su-display text-su-title-lg font-bold tracking-tight text-su-ink">
+              StashUp
+            </span>
+            <span className="rounded-su-pill bg-su-primary/10 px-2.5 py-0.5 font-su-sans text-su-caption-sm font-semibold text-su-primary">
+              Admin
+            </span>
           </div>
-          <span className="text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
-            StashUp Portal
-          </span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Platform Administration
-          </span>
+          <p className="font-su-sans text-su-body-sm text-su-muted">
+            Platform administration · authorized personnel only
+          </p>
         </div>
 
-        <Card className="border-border/40 bg-card/60 shadow-2xl backdrop-blur-md">
-          <CardHeader className="space-y-1 text-center">
-            <CardTitle className="bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-2xl font-bold text-transparent">
-              Admin Login
-            </CardTitle>
-            <CardDescription className="text-muted-foreground/80">
-              Authorized personnel only. Multi-factor authentication required.
-            </CardDescription>
-          </CardHeader>
+        <div className="rounded-su-xl border border-su-hairline bg-su-surface-card p-su-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+          <div className="mb-6 space-y-1 text-center">
+            <h1 className="font-su-sans text-su-title-md font-semibold text-su-ink">Sign in</h1>
+            <p className="font-su-sans text-su-body-sm text-su-muted">
+              Enter your admin credentials to continue
+            </p>
+          </div>
+
           <Form {...form}>
-            <form onSubmit={onSubmit}>
-              <CardContent className="space-y-4">
-                {error && (
-                  <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-center text-sm font-medium text-destructive">
-                    {error}
-                  </div>
-                )}
-                <FormInput
-                  control={form.control}
-                  name="email"
-                  label="Admin Email"
-                  type="email"
-                  placeholder="admin@stashup.com"
-                  disabled={isLoading}
-                  className="transition-all duration-200 focus:border-purple-500 focus:ring-purple-500/20"
-                />
-                <FormInput
-                  control={form.control}
-                  name="password"
-                  label="Password"
-                  type="password"
-                  placeholder="••••••••"
-                  disabled={isLoading}
-                  className="transition-all duration-200 focus:border-purple-500 focus:ring-purple-500/20"
-                />
-              </CardContent>
-              <CardFooter className="flex flex-col space-y-4">
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-semibold transition-all duration-300 hover:from-purple-600 hover:to-indigo-600 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:hover:scale-100 cursor-pointer"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Authenticating..." : "Login"}
-                </Button>
-              </CardFooter>
+            <form onSubmit={onSubmit} className="space-y-5">
+              <FormInput
+                control={form.control}
+                name="email"
+                label="Email"
+                type="email"
+                placeholder="admin@stashup.xyz"
+                disabled={isLoading}
+              />
+              <FormPasswordInput
+                control={form.control}
+                name="password"
+                label="Password"
+                type="password"
+                placeholder="••••••••"
+                disabled={isLoading}
+              />
+              <Button size="lg" type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? "Signing in…" : "Sign in"}
+              </Button>
             </form>
           </Form>
-        </Card>
+        </div>
       </div>
     </div>
   )
