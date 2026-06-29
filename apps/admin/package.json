@@ -8,6 +8,8 @@
     "start": "next start -p 3001",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
     "seed": "node --conditions=react-server --env-file=../../packages/db/.env --import tsx scripts/seed.ts"
   },
   "dependencies": {
