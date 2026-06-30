@@ -7,6 +7,7 @@ import { fetchOnboardingStatus } from "@/lib/api/data/onboarding"
 import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
 import { serverApiOptions } from "@/lib/api/server"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
+import { SidebarTrigger } from "@workspace/ui/components/sidebar"
 import { PostHogIdentify } from "@/components/posthog-identify"
 import { NotificationBell } from "@/features/notifications/components/notification-bell"
 
@@ -30,19 +31,15 @@ export default async function DashboardPage() {
   ])
 
   return (
-    <div className="min-h-screen bg-su-canvas text-su-ink flex flex-col">
+    <div className="flex flex-col flex-1 h-full">
       <PostHogIdentify userId={user.id} />
       {/* Real Top Navigation */}
-      <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-6 sm:px-8 flex items-center justify-between">
-        <span className="font-su-display text-su-title-md font-semibold text-su-ink tracking-tight">
-          StashUp
-        </span>
+      <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-4 sm:px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <span className="font-su-sans text-su-nav font-medium text-su-body">
-            @{user.username}
-          </span>
+          <SidebarTrigger />
+        </div>
+        <div className="flex items-center gap-4">
           <NotificationBell />
-          <SignOutButton />
         </div>
       </nav>
 
@@ -62,7 +59,7 @@ export default async function DashboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* User Information Card */}
-          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base">
             <CardHeader className="pb-4">
               <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
                 Profile Details
@@ -88,7 +85,7 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Withdrawal Account Card */}
-          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base">
             <CardHeader className="pb-4">
               <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
                 Withdrawal Destination
@@ -128,7 +125,7 @@ export default async function DashboardPage() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-su-canvas py-8 px-6 border-t border-su-hairline-soft text-center mt-12">
+      <footer className="py-8 px-6 border-t border-su-hairline-soft text-center mt-auto">
         <p className="font-su-sans text-su-caption text-su-muted">
           © 2026 StashUp. All rights reserved.
         </p>
