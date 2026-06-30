@@ -1,0 +1,91 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { GET } from "./route";
+import { prisma } from "@workspace/db";
+import { auth } from "@/lib/auth";
+import { createMockSession } from "@test/mocks/auth";
+import { NextRequest } from "next/server";
+
+vi.mock("@workspace/db", () => {
+  return {
+    prisma: {
+      membership: { findUnique: vi.fn() },
+      circle: { findUnique: vi.fn() },
+    },
+  };
+});
+
+describe("/api/circles/[id]", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("GET", () => {
+    it("returns 401 if unauthenticated", async () => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
+      const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 if not a member", async () => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(
+        createMockSession({ id: "user-1" }) as any
+      );
+      vi.mocked(prisma.membership.findUnique).mockResolvedValue(null);
+      
+      const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
+      const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 404 if circle not found", async () => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(
+        createMockSession({ id: "user-1" }) as any
+      );
+      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);
+      vi.mocked(prisma.circle.findUnique).mockResolvedValue(null);
+      
+      const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
+      const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns circle details", async () => {
+      vi.mocked(auth.api.getSession).mockResolvedValue(
+        createMockSession({ id: "user-1" }) as any
+      );
+      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);
+      vi.mocked(prisma.circle.findUnique).mockResolvedValue({
+        id: "circle-1",
+        name: "Test",
+        contributionMinor: 1000,
+        currency: "NGN",
+        frequency: "WEEKLY",
+        status: "FORMING",
+        totalSlots: 5,
+        startDeadline: new Date(),
+        createdAt: new Date(),
+        memberships: [{
+          role: "CREATOR",
+          payoutPosition: 1,
+          status: "ACTIVE",
+          user: { id: "user-1", name: "User 1", username: "user1", image: null }
+        }],
+        invites: [{
+          id: "inv-1",
+          status: "PENDING",
+          expiresAt: new Date(),
+          invitedUser: { id: "user-2", name: "User 2", username: "user2", image: null }
+        }]
+      } as any);
+      
+      const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
+      const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.name).toBe("Test");
+      expect(data.members).toHaveLength(1);
+      expect(data.invites).toHaveLength(1);
+    });
+  });
+});

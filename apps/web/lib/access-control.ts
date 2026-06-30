@@ -47,3 +47,16 @@ export async function requireCircleCreator(circleId: string, userId: string) {
   }
   return membership
 }
+
+export async function requireFormingCircle(circleId: string) {
+  const circle = await prisma.circle.findUnique({
+    where: { id: circleId },
+  })
+  if (!circle) {
+    throw new Error("Circle not found")
+  }
+  if (circle.status !== "FORMING") {
+    throw new Error("This action can only be performed while the circle is forming")
+  }
+  return circle
+}
