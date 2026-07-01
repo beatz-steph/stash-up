@@ -190,3 +190,21 @@ export async function resolveBankAccount(params: ResolveBankAccountParams) {
     accountName: data.data.accountName as string,
   };
 }
+
+export async function getBanks() {
+  const res = await nombaFetch("/v1/transfers/banks");
+
+  if (!res.ok) {
+    throw new Error(`Fetch banks failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  if (data.code !== "00") {
+    throw new Error(`Fetch banks unsuccessful: ${data.description}`);
+  }
+
+  return data.data as {
+    code: string;
+    name: string;
+  }[];
+}

@@ -19,13 +19,13 @@ export const withdrawalAccountSchema = z.object({
 
 export type WithdrawalAccountFormValues = z.infer<typeof withdrawalAccountSchema>
 
-export function useWithdrawalAccountForm() {
+export function useWithdrawalAccountForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [resolvedName, setResolvedName] = useState<string | null>(null)
   const [isResolving, setIsResolving] = useState(false)
   const [resolutionError, setResolutionError] = useState<string | null>(null)
 
   const { data: banks = [], isLoading: isLoadingBanks } = useBanks()
-  const saveMutation = useSaveWithdrawalAccount()
+  const saveMutation = useSaveWithdrawalAccount(onSuccess)
 
   const form = useForm<WithdrawalAccountFormValues>({
     resolver: zodResolver(withdrawalAccountSchema),

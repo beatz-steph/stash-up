@@ -6,7 +6,7 @@ import { Button } from "@workspace/ui/components/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select"
 import { useWithdrawalAccountForm } from "./model"
 
-export function WithdrawalAccountForm() {
+export function WithdrawalAccountForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const {
     form,
     onSubmit,
@@ -16,7 +16,7 @@ export function WithdrawalAccountForm() {
     resolvedName,
     resolutionError,
     isSubmitting,
-  } = useWithdrawalAccountForm()
+  } = useWithdrawalAccountForm({ onSuccess })
 
   return (
     <Form {...form}>

@@ -10,23 +10,30 @@ import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "@/lib/auth-client"
 import { isOnboardingComplete } from "../functions"
 import type { OnboardingStatus } from "@/app/api/onboarding/dto/status.dto"
+import { WithdrawalAccountModal } from "./withdrawal-account-modal"
 
 interface OnboardingBannerProps {
   status: OnboardingStatus
   /** Used to resend the verification email. */
   userEmail: string
+  /** When the user already belongs to a circle, the "all set" nudge is redundant. */
+  hasCircles?: boolean
 }
 
-export function OnboardingBanner({ status, userEmail }: OnboardingBannerProps) {
+export function OnboardingBanner({ status, userEmail, hasCircles = false }: OnboardingBannerProps) {
   const router = useRouter()
   const [resending, setResending] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
 
   const { account, verified, withdrawal } = status
 
   // ── Setup complete → unlock circles ────────────────────────────────────────
   if (isOnboardingComplete(status)) {
+    // Once they're in a circle, the celebration/CTA has served its purpose.
+    if (hasCircles) return null
+
     return (
-      <div className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
           <h3 className="font-su-sans text-su-title-md font-semibold text-su-ink flex items-center gap-2">
             <span>You&apos;re all set 🎉</span>
@@ -79,7 +86,7 @@ export function OnboardingBanner({ status, userEmail }: OnboardingBannerProps) {
   if (activeIndex === -1) activeIndex = stages.length
 
   return (
-    <div className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl shadow-[0_4px_12px_rgba(0,0,0,0.04)] space-y-6">
+    <div className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="space-y-1">
           <h2 className="font-su-sans text-su-title-md font-semibold text-su-ink">
@@ -174,12 +181,11 @@ export function OnboardingBanner({ status, userEmail }: OnboardingBannerProps) {
                     </>
                   )}
                   {stage.key === "withdrawal" && (
-                    <Link
-                      href="/onboarding/withdrawal-account"
-                      className={buttonVariants({ size: "sm", className: "w-fit text-su-on-primary" })}
-                    >
-                      Set up withdrawal account
-                    </Link>
+                    <WithdrawalAccountModal open={modalOpen} onOpenChange={setModalOpen}>
+                      <Button size="sm" className="w-fit text-su-on-primary">
+                        Set up withdrawal account
+                      </Button>
+                    </WithdrawalAccountModal>
                   )}
                 </div>
               )}
