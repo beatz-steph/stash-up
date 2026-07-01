@@ -8,6 +8,10 @@ import {
   SidebarInset,
 } from "@workspace/ui/components/sidebar"
 
+import { fetchOnboardingStatus } from "@/lib/api/data/onboarding"
+import { serverApiOptions } from "@/lib/api/server"
+import { OnboardingProvider } from "@/features/onboarding/components/onboarding-provider"
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -23,11 +27,16 @@ export default async function DashboardLayout({
 
   const { user } = session
 
+  const onboardingStatus = await fetchOnboardingStatus(await serverApiOptions())
+  const isOnboarded = onboardingStatus.account && onboardingStatus.verified && onboardingStatus.withdrawal
+
   return (
     <SidebarProvider>
       <AppSidebar user={user} />
       <SidebarInset className="bg-su-canvas min-h-screen">
-        {children}
+        <OnboardingProvider isOnboarded={isOnboarded}>
+          {children}
+        </OnboardingProvider>
       </SidebarInset>
     </SidebarProvider>
   )

@@ -1,135 +1,73 @@
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { SignOutButton } from "@/components/sign-out-button"
+import Link from "next/link"
+import { Plus } from "lucide-react"
+
 import { OnboardingBanner } from "@/features/onboarding/components/onboarding-banner"
 import { fetchOnboardingStatus } from "@/lib/api/data/onboarding"
-import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
+import { fetchMyCircles } from "@/lib/api/data/circles"
 import { serverApiOptions } from "@/lib/api/server"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
-import { SidebarTrigger } from "@workspace/ui/components/sidebar"
+import { Button } from "@workspace/ui/components/button"
 import { PostHogIdentify } from "@/components/posthog-identify"
-import { NotificationBell } from "@/features/notifications/components/notification-bell"
+import { DashboardHeader, PageHeading, PageContent } from "./components/dashboard-header"
+import { DashboardOverview } from "@/features/circles/components/dashboard-overview"
 
 export default async function DashboardPage() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
-
+  const session = await auth.api.getSession({ headers: await headers() })
   if (!session) {
     redirect("/sign-in")
   }
-
   const { user } = session
 
-  // Fetch onboarding status and withdrawal account via the API (backend layer),
-  // forwarding the session cookie. Server Components only render — they don't read the DB.
   const apiOptions = await serverApiOptions()
-  const [onboardingStatus, withdrawalAccount] = await Promise.all([
+  const [onboardingStatus, circles] = await Promise.all([
     fetchOnboardingStatus(apiOptions),
-    fetchWithdrawalAccount(apiOptions),
+    fetchMyCircles(apiOptions),
   ])
+  const hasCircles = circles.length > 0
+
+  const isOnboarded =
+    onboardingStatus.account &&
+    onboardingStatus.verified &&
+    onboardingStatus.withdrawal
+
+  const firstName = user.name?.split(" ")[0] ?? "there"
 
   return (
-    <div className="flex flex-col flex-1 h-full">
+    <div className="flex min-h-screen flex-col">
       <PostHogIdentify userId={user.id} />
-      {/* Real Top Navigation */}
-      <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-4 sm:px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-        </div>
-        <div className="flex items-center gap-4">
-          <NotificationBell />
-        </div>
-      </nav>
+      <DashboardHeader />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-[1000px] w-full mx-auto p-6 sm:p-8 space-y-8">
-        <div className="space-y-1">
-          <h1 className="font-su-sans text-su-title-lg font-semibold text-su-ink">
-            Good morning, {user.name}
-          </h1>
-          <p className="font-su-sans text-su-body-sm text-su-muted">
-            Manage your rotating savings circles and payouts.
-          </p>
-        </div>
-
-        {/* Onboarding banner — shows setup progress, or the circle unlock once complete */}
-        <OnboardingBanner status={onboardingStatus} userEmail={user.email} />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* User Information Card */}
-          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base">
-            <CardHeader className="pb-4">
-              <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
-                Profile Details
-              </CardTitle>
-              <CardDescription className="font-su-sans text-su-caption text-su-muted">
-                Your StashUp account details
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="divide-y divide-su-hairline-soft pt-0">
-              <div className="flex justify-between py-3">
-                <span className="font-su-sans text-su-body-sm text-su-muted">Name</span>
-                <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{user.name}</span>
-              </div>
-              <div className="flex justify-between py-3">
-                <span className="font-su-sans text-su-body-sm text-su-muted">Username</span>
-                <span className="font-su-sans text-su-body-sm font-mono text-su-primary">@{user.username}</span>
-              </div>
-              <div className="flex justify-between py-3">
-                <span className="font-su-sans text-su-body-sm text-su-muted">Email</span>
-                <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{user.email}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Withdrawal Account Card */}
-          <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base">
-            <CardHeader className="pb-4">
-              <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
-                Withdrawal Destination
-              </CardTitle>
-              <CardDescription className="font-su-sans text-su-caption text-su-muted">
-                Bank account linked for payouts
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {withdrawalAccount ? (
-                <div className="divide-y divide-su-hairline-soft">
-                  <div className="flex justify-between py-3">
-                    <span className="font-su-sans text-su-body-sm text-su-muted">Bank</span>
-                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{withdrawalAccount.bankName}</span>
-                  </div>
-                  <div className="flex justify-between py-3">
-                    <span className="font-su-sans text-su-body-sm text-su-muted">Account Number</span>
-                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
-                      {withdrawalAccount.accountNumber.slice(0, 2) + "******" + withdrawalAccount.accountNumber.slice(-2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-3">
-                    <span className="font-su-sans text-su-body-sm text-su-muted">Account Name</span>
-                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">{withdrawalAccount.accountName}</span>
-                  </div>
-                </div>
+      <PageContent>
+        <PageHeading
+          title={`Welcome back, ${firstName}`}
+          subtitle="Here's what's happening across your savings circles."
+          action={
+            <Button
+              asChild={isOnboarded}
+              disabled={!isOnboarded}
+              className="rounded-su-pill"
+            >
+              {isOnboarded ? (
+                <Link href="/circles/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New circle
+                </Link>
               ) : (
-                <div className="py-4 text-center space-y-3">
-                  <p className="font-su-sans text-su-body-sm text-su-muted">
-                    No withdrawal account linked yet.
-                  </p>
-                </div>
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New circle
+                </>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+            </Button>
+          }
+        />
 
-      {/* Footer */}
-      <footer className="py-8 px-6 border-t border-su-hairline-soft text-center mt-auto">
-        <p className="font-su-sans text-su-caption text-su-muted">
-          © 2026 StashUp. All rights reserved.
-        </p>
-      </footer>
+        <OnboardingBanner status={onboardingStatus} userEmail={user.email} hasCircles={hasCircles} />
+
+        <DashboardOverview />
+      </PageContent>
     </div>
   )
 }
