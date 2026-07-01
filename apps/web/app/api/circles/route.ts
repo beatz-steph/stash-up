@@ -1,15 +1,15 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server";
 import { prisma } from "@workspace/db";
 import { requireOnboardingComplete } from "@/lib/access-control";
 import { validateRequestBody } from "@/lib/api/validate";
-import { CreateCircleReqSchema } from "./dto/circles.dto";
+import { CreateCircleReqSchema, type CreateCircleRes, type CircleSummaryRes } from "./dto/circles.dto";
 
 export async function POST(req: Request) {
   const session = await getSession();
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const validation = await validateRequestBody(req, CreateCircleReqSchema);
@@ -21,9 +21,9 @@ export async function POST(req: Request) {
     await requireOnboardingComplete(session.user);
   } catch (err) {
     if (err instanceof Error) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
+      return apiError(err.message, 403);
     }
-    return NextResponse.json({ error: "Unknown error" }, { status: 403 });
+    return apiError("Unknown error", 403);
   }
 
   // Check if blocked
@@ -33,10 +33,7 @@ export async function POST(req: Request) {
   });
 
   if (user?.blockedFromCircles) {
-    return NextResponse.json(
-      { error: "You are blocked from participating in circles" },
-      { status: 403 }
-    );
+    return apiError("You are blocked from participating in circles", 403);
   }
 
   // Create Circle and Membership
@@ -62,14 +59,14 @@ export async function POST(req: Request) {
     });
   });
 
-  return NextResponse.json(circle, { status: 201 });
+  return apiSuccess<CreateCircleRes>({ id: circle.id }, 201);
 }
 
 export async function GET(req: Request) {
   const session = await getSession();
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const circles = await prisma.circle.findMany({
@@ -105,5 +102,5 @@ export async function GET(req: Request) {
     filledSlots: circle._count.memberships,
   }));
 
-  return NextResponse.json(response);
+  return apiSuccess<CircleSummaryRes[]>(response);
 }

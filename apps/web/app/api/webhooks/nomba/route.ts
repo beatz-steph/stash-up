@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { apiSuccess, apiError } from "@/lib/api/response";
 import crypto from "crypto";
 import { prisma } from "@workspace/db";
 import { claimWebhookEvent } from "@/lib/redis";
@@ -14,20 +14,20 @@ export async function POST(request: Request) {
     payload = JSON.parse(rawBody);
   } catch (err) {
     // Malformed JSON is not retriable. Return 200 to stop retry.
-    return NextResponse.json({ received: true }, { status: 200 });
+    return apiSuccess({ received: true }, 200);
   }
 
   const requestId = payload.requestId;
   const eventType = payload.event_type;
 
   if (!requestId || !eventType) {
-    return NextResponse.json({ received: true }, { status: 200 });
+    return apiSuccess({ received: true }, 200);
   }
 
   // 2. Dedup: Redis claim
   const isNewEvent = await claimWebhookEvent("NOMBA", requestId);
   if (!isNewEvent) {
-    return NextResponse.json({ received: true }, { status: 200 });
+    return apiSuccess({ received: true }, 200);
   }
 
   // 3. Verify signature (headers come off the incoming Request)
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
     if (!signatureValid) {
       // Persist receipt but don't dispatch.
-      return NextResponse.json({ received: true }, { status: 200 });
+      return apiSuccess({ received: true }, 200);
     }
 
     // 5. Dispatch
@@ -70,13 +70,13 @@ export async function POST(request: Request) {
   } catch (err) {
     if ((err as { code?: string }).code === "P2002") {
       // P2002: Unique constraint violation (fallback dedup)
-      return NextResponse.json({ received: true }, { status: 200 });
+      return apiSuccess({ received: true }, 200);
     }
     // For all other errors (e.g. DB unreachable, dispatch crash), we log and return 500
     // so that Nomba triggers its retry mechanism, preventing permanent data loss.
     console.error("[Webhook Error] Unexpected failure:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return apiError("Internal Server Error", 500);
   }
 
-  return NextResponse.json({ received: true }, { status: 200 });
+  return apiSuccess({ received: true }, 200);
 }

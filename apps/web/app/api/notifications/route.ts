@@ -1,13 +1,14 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server"
 import { prisma } from "@workspace/db"
+import type { NotificationListRes } from "./dto/notification.dto"
 
 const NOTIFICATION_LIMIT = 30
 
 export async function GET() {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401)
   }
 
   const userId = session.user.id
@@ -36,5 +37,5 @@ export async function GET() {
     createdAt: n.createdAt.toISOString(),
   }))
 
-  return NextResponse.json({ items, unreadCount })
+  return apiSuccess<NotificationListRes>({ items, unreadCount })
 }

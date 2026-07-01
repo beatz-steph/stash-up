@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { prisma } from "@workspace/db"
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,}$/
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const username = raw.toLowerCase()
 
   if (!USERNAME_PATTERN.test(username)) {
-    return NextResponse.json({ available: false, reason: "invalid" as const })
+    return apiSuccess({ available: false, reason: "invalid" as const })
   }
 
   const existing = await prisma.user.findUnique({
@@ -23,5 +23,5 @@ export async function GET(request: Request) {
     select: { id: true },
   })
 
-  return NextResponse.json({ available: !existing })
+  return apiSuccess({ available: !existing })
 }

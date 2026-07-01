@@ -1,12 +1,13 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server";
+import type { InviteRes } from "../circles/dto/circles.dto";
 
 import { prisma } from "@workspace/db";
 
 export async function GET(req: Request) {
   const session = await getSession();
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const invites = await prisma.circleInvite.findMany({
@@ -42,5 +43,5 @@ export async function GET(req: Request) {
     invitedBy: inv.invitedBy,
   }));
 
-  return NextResponse.json(response);
+  return apiSuccess<InviteRes[]>(response);
 }

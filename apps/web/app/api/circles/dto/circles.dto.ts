@@ -81,3 +81,20 @@ export const InviteResSchema = z.object({
   status: z.string(),
   expiresAt: z.date().or(z.string()),
 });
+
+export const CreateCircleResSchema = z.object({
+  id: z.string(),
+});
+
+export const CreateInviteResSchema = z.object({
+  id: z.string(),
+  circleId: z.string(),
+  invitedUserId: z.string(),
+  status: z.string(),
+});
+
+export type CircleSummaryRes = z.infer<typeof CircleSummaryResSchema>;
+export type CircleDetailRes = z.infer<typeof CircleDetailResSchema>;
+export type InviteRes = z.infer<typeof InviteResSchema>;
+export type CreateCircleRes = z.infer<typeof CreateCircleResSchema>;
+export type CreateInviteRes = z.infer<typeof CreateInviteResSchema>;

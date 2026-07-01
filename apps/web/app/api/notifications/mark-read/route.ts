@@ -1,13 +1,13 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server"
 import { prisma } from "@workspace/db"
 import { validateRequestBody } from "@/lib/api/validate"
-import { MarkReadReqSchema } from "../dto/notification.dto"
+import { MarkReadReqSchema, type MarkReadRes } from "../dto/notification.dto"
 
 export async function POST(request: Request) {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401)
   }
 
   const validation = await validateRequestBody(request, MarkReadReqSchema)
@@ -26,5 +26,5 @@ export async function POST(request: Request) {
   })
 
   const unreadCount = await prisma.notification.count({ where: { userId, readAt: null } })
-  return NextResponse.json({ unreadCount })
+  return apiSuccess<MarkReadRes>({ unreadCount })
 }

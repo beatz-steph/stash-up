@@ -1,5 +1,5 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server";
 
 import { prisma } from "@workspace/db";
 import { requireCircleCreator } from "@/lib/access-control";
@@ -10,7 +10,7 @@ export async function POST(
 ) {
   const session = await getSession();
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const { id, inviteId } = await params;
@@ -19,9 +19,9 @@ export async function POST(
     await requireCircleCreator(id, session.user.id);
   } catch (err) {
     if (err instanceof Error) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
+      return apiError(err.message, 403);
     }
-    return NextResponse.json({ error: "Unknown error" }, { status: 403 });
+    return apiError("Unknown error", 403);
   }
 
   await prisma.circleInvite.update({
@@ -29,5 +29,5 @@ export async function POST(
     data: { status: "CANCELLED" },
   });
 
-  return NextResponse.json({ success: true });
+  return apiSuccess({ success: true });
 }

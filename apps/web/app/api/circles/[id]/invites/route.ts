@@ -1,16 +1,16 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server";
 
 import { prisma } from "@workspace/db";
 import { requireCircleCreator, requireFormingCircle } from "@/lib/access-control";
 import { validateRequestBody } from "@/lib/api/validate";
-import { InviteReqSchema } from "../../dto/circles.dto";
+import { InviteReqSchema, type CreateInviteRes } from "../../dto/circles.dto";
 import { createNotification } from "@/lib/notifications";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const { id } = await params;
@@ -24,9 +24,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     circle = await requireFormingCircle(id);
   } catch (err) {
     if (err instanceof Error) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
+      return apiError(err.message, 403);
     }
-    return NextResponse.json({ error: "Unknown error" }, { status: 403 });
+    return apiError("Unknown error", 403);
   }
 
   const userToInvite = await prisma.user.findUnique({
@@ -34,15 +34,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
 
   if (!userToInvite) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return apiError("User not found", 404);
   }
 
   if (userToInvite.id === session.user.id) {
-    return NextResponse.json({ error: "You cannot invite yourself" }, { status: 403 });
+    return apiError("You cannot invite yourself", 403);
   }
 
   if (userToInvite.blockedFromCircles) {
-    return NextResponse.json({ error: "This user is blocked from participating in circles" }, { status: 403 });
+    return apiError("This user is blocked from participating in circles", 403);
   }
 
   // Check if they are already an active member
@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
 
   if (existingMembership) {
-    return NextResponse.json({ error: "User is already a member of this circle" }, { status: 409 });
+    return apiError("User is already a member of this circle", 409);
   }
 
   // Capacity check
@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const pendingInvites = await prisma.circleInvite.count({ where: { circleId: id, status: "PENDING" } });
 
   if (activeMembers + pendingInvites >= circle.totalSlots) {
-    return NextResponse.json({ error: "Circle has no open slots left" }, { status: 409 });
+    return apiError("Circle has no open slots left", 409);
   }
 
   // Upsert semantics
@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
 
   if (existingInvite?.status === "PENDING") {
-    return NextResponse.json({ error: "An active invite already exists for this user" }, { status: 409 });
+    return apiError("An active invite already exists for this user", 409);
   }
 
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -92,5 +92,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     link: `/circles/invites`,
   });
 
-  return NextResponse.json(invite, { status: 201 });
+  return apiSuccess<CreateInviteRes>(
+    {
+      id: invite.id,
+      circleId: invite.circleId,
+      invitedUserId: invite.invitedUserId,
+      status: invite.status,
+    },
+    201
+  );
 }

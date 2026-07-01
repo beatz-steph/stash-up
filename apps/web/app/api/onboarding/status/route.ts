@@ -1,12 +1,12 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server"
 import { prisma } from "@workspace/db"
 import type { OnboardingStatus } from "../dto/status.dto"
 
 export async function GET() {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401)
   }
 
   try {
@@ -20,9 +20,9 @@ export async function GET() {
       verified: !!session.user.emailVerified,
       withdrawal: !!withdrawalAccount,
     }
-    return NextResponse.json(status)
+    return apiSuccess<OnboardingStatus>(status)
   } catch (error) {
     console.error("Error fetching onboarding status:", error)
-    return NextResponse.json({ error: "Failed to fetch onboarding status" }, { status: 500 })
+    return apiError("Failed to fetch onboarding status", 500)
   }
 }

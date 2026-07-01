@@ -1,5 +1,6 @@
+import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { NextResponse } from "next/server";
+import type { CircleDetailRes } from "../dto/circles.dto";
 import { prisma } from "@workspace/db";
 import { requireCircleMember } from "@/lib/access-control";
 
@@ -7,7 +8,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const session = await getSession();
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401);
   }
 
   const { id } = await params;
@@ -16,9 +17,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     await requireCircleMember(id, session.user.id);
   } catch (err) {
     if (err instanceof Error) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
+      return apiError(err.message, 403);
     }
-    return NextResponse.json({ error: "Unknown error" }, { status: 403 });
+    return apiError("Unknown error", 403);
   }
 
   const circle = await prisma.circle.findUnique({
@@ -54,7 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   });
 
   if (!circle) {
-    return NextResponse.json({ error: "Circle not found" }, { status: 404 });
+    return apiError("Circle not found", 404);
   }
 
   const response = {
@@ -81,5 +82,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     })),
   };
 
-  return NextResponse.json(response);
+  return apiSuccess<CircleDetailRes>(response);
 }
