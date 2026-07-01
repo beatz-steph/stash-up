@@ -1,5 +1,4 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { requireSession } from "@/lib/session"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Plus } from "lucide-react"
@@ -14,10 +13,8 @@ import { DashboardHeader, PageHeading, PageContent } from "./components/dashboar
 import { DashboardOverview } from "@/features/circles/components/dashboard-overview"
 
 export default async function DashboardPage() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) {
-    redirect("/sign-in")
-  }
+  const session = await requireSession()
+  
   const { user } = session
 
   const apiOptions = await serverApiOptions()

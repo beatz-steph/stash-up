@@ -1,5 +1,4 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { requireSession } from "@/lib/session"
 import { redirect } from "next/navigation"
 
 import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
@@ -23,10 +22,8 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 }
 
 export default async function SettingsPage() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) {
-    redirect("/sign-in")
-  }
+  const session = await requireSession()
+  
   const { user } = session
 
   const apiOptions = await serverApiOptions()

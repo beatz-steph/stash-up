@@ -1,14 +1,12 @@
+import { getSession } from "@/lib/session"
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@workspace/db";
 import { requireOnboardingComplete } from "@/lib/access-control";
 import { validateRequestBody } from "@/lib/api/validate";
 import { CreateCircleReqSchema } from "./dto/circles.dto";
 
 export async function POST(req: Request) {
-  const session = await auth.api.getSession({
-    headers: req.headers,
-  });
+  const session = await getSession();
 
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -68,9 +66,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth.api.getSession({
-    headers: req.headers,
-  });
+  const session = await getSession();
 
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

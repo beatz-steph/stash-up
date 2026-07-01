@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST, GET } from "./route";
 import { prisma } from "@workspace/db";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
+
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
 vi.mock("@workspace/db", () => {
   return {
@@ -23,14 +25,14 @@ describe("/api/circles", () => {
 
   describe("POST", () => {
     it("returns 401 if unauthenticated", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      vi.mocked(getSession).mockResolvedValue(null);
       const req = new NextRequest("http://localhost/api/circles", { method: "POST" });
       const res = await POST(req);
       expect(res.status).toBe(401);
     });
 
     it("returns 400 for invalid body", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1", emailVerified: true }) as any
       );
       const req = new NextRequest("http://localhost/api/circles", {
@@ -42,7 +44,7 @@ describe("/api/circles", () => {
     });
 
     it("returns 403 if blocked from circles", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1", emailVerified: true }) as any
       );
       vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: true } as any);
@@ -63,7 +65,7 @@ describe("/api/circles", () => {
     });
 
     it("creates circle and membership successfully", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1", emailVerified: true }) as any
       );
       vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as any);
@@ -88,14 +90,14 @@ describe("/api/circles", () => {
 
   describe("GET", () => {
     it("returns 401 if unauthenticated", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      vi.mocked(getSession).mockResolvedValue(null);
       const req = new NextRequest("http://localhost/api/circles", { method: "GET" });
       const res = await GET(req);
       expect(res.status).toBe(401);
     });
 
     it("returns circles for user", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1" }) as any
       );
       vi.mocked(prisma.circle.findMany).mockResolvedValue([

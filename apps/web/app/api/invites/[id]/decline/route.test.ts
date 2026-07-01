@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "./route";
 import { prisma } from "@workspace/db";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
+
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
 vi.mock("@workspace/db", () => {
   return {
@@ -19,14 +21,14 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("returns 401 if unauthenticated", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(getSession).mockResolvedValue(null);
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
     expect(res.status).toBe(401);
   });
 
   it("returns 404 if invite not found or expired", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -35,7 +37,7 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("returns 403 if invite belongs to someone else", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-2",
@@ -49,7 +51,7 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("declines invite successfully", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-1",

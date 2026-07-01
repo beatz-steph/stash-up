@@ -1,10 +1,9 @@
+import { getSession } from "@/lib/session"
 import { NextResponse } from "next/server"
 import { getBanks } from "@/lib/nomba-client"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
 
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() })
+  const session = await getSession()
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

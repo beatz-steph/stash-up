@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "./route";
 import { prisma } from "@workspace/db";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
 
@@ -32,20 +32,22 @@ vi.mock("@workspace/db", () => {
 
 import { Prisma } from "@workspace/db";
 
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
+
 describe("/api/invites/[id]/accept", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("returns 401 if unauthenticated", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(getSession).mockResolvedValue(null);
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
     expect(res.status).toBe(401);
   });
 
   it("returns 404 if invite not found or expired", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -54,7 +56,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 403 if invite belongs to someone else", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-2",
@@ -68,7 +70,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 403 if user blocked from circles", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
@@ -85,7 +87,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 409 if circle is full", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
@@ -104,7 +106,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("handles P2002 conflict by returning 409", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
@@ -132,7 +134,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("accepts invite successfully", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",

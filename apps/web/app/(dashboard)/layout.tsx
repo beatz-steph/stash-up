@@ -1,7 +1,8 @@
+import { getSession } from "@/lib/session"
+import { requireSession } from "@/lib/session"
 import { ReactNode } from "react"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
 import { AppSidebar } from "./components/app-sidebar"
 import {
   SidebarProvider,
@@ -17,13 +18,9 @@ export default async function DashboardLayout({
 }: {
   children: ReactNode
 }) {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
+  const session = await getSession()
 
-  if (!session) {
-    redirect("/sign-in")
-  }
+  
 
   const { user } = session
 

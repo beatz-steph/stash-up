@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 import { prisma } from "@workspace/db";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
+
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
 vi.mock("@workspace/db", () => {
   return {
@@ -19,14 +21,14 @@ describe("/api/invites", () => {
   });
 
   it("returns 401 if unauthenticated", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(getSession).mockResolvedValue(null);
     const req = new NextRequest("http://localhost/api/invites", { method: "GET" });
     const res = await GET(req);
     expect(res.status).toBe(401);
   });
 
   it("returns list of invites", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
     vi.mocked(prisma.circleInvite.findMany).mockResolvedValue([
       {
         id: "inv-1",

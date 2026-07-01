@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 import { prisma } from "@workspace/db";
-import { auth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
+
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
 vi.mock("@workspace/db", () => {
   return {
@@ -21,14 +23,14 @@ describe("/api/circles/[id]", () => {
 
   describe("GET", () => {
     it("returns 401 if unauthenticated", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(null);
+      vi.mocked(getSession).mockResolvedValue(null);
       const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
       const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
       expect(res.status).toBe(401);
     });
 
     it("returns 403 if not a member", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1" }) as any
       );
       vi.mocked(prisma.membership.findUnique).mockResolvedValue(null);
@@ -39,7 +41,7 @@ describe("/api/circles/[id]", () => {
     });
 
     it("returns 404 if circle not found", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1" }) as any
       );
       vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);
@@ -51,7 +53,7 @@ describe("/api/circles/[id]", () => {
     });
 
     it("returns circle details", async () => {
-      vi.mocked(auth.api.getSession).mockResolvedValue(
+      vi.mocked(getSession).mockResolvedValue(
         createMockSession({ id: "user-1" }) as any
       );
       vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);

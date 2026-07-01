@@ -1,12 +1,11 @@
+import { getSession } from "@/lib/session"
 import { NextResponse } from "next/server"
-import { headers } from "next/headers"
-import { auth } from "@/lib/auth"
 import { ResolveAccountReqSchema } from "../dto/withdrawal-account.dto"
 import { validateRequestBody } from "@/lib/api/validate"
 import { resolveBankAccount } from "@/lib/nomba-client"
 
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() })
+  const session = await getSession()
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
