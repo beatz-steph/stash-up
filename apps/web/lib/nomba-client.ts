@@ -15,6 +15,8 @@ interface NombaToken {
   expires_at: number;
 }
 
+let tokenPromise: Promise<NombaToken> | null = null;
+
 async function fetchNewToken(): Promise<NombaToken> {
   const res = await fetch(`${BASE_URL}/v1/auth/token/issue`, {
     method: "POST",
@@ -74,6 +76,11 @@ async function doRefreshToken(token: NombaToken): Promise<NombaToken> {
 }
 
 async function getToken(): Promise<string> {
+  // Deduplicate concurrent token requests
+  if (tokenPromise) {
+    return (await tokenPromise).access_token;
+  }
+
   const raw = await redis.get(TOKEN_KEY);
 
   if (raw) {
@@ -81,10 +88,17 @@ async function getToken(): Promise<string> {
     if (Date.now() < token.expires_at) {
       return token.access_token;
     }
-    return (await doRefreshToken(token)).access_token;
+    
+    tokenPromise = doRefreshToken(token).finally(() => {
+      tokenPromise = null;
+    });
+    return (await tokenPromise).access_token;
   }
 
-  return (await fetchNewToken()).access_token;
+  tokenPromise = fetchNewToken().finally(() => {
+    tokenPromise = null;
+  });
+  return (await tokenPromise).access_token;
 }
 
 async function nombaFetch(path: string, init: RequestInit = {}): Promise<Response> {
