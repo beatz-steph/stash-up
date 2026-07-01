@@ -3,11 +3,13 @@
 import { Button } from "@workspace/ui/components/button"
 import { authClient } from "@/lib/auth-client"
 import { resetUser } from "@/lib/analytics/client"
+import { useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 export function SignOutButton() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [isPending, setIsPending] = useState(false)
 
   const handleSignOut = async () => {
@@ -15,6 +17,7 @@ export function SignOutButton() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
+          queryClient.clear()
           resetUser()
           router.push("/sign-in")
           router.refresh()
