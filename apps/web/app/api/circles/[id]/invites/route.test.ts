@@ -32,16 +32,16 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("returns 400 for invalid body", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({}) });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
     expect(res.status).toBe(400);
   });
 
   it("returns 404 if user to invite not found", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ username: "ghost" }) });
@@ -50,10 +50,10 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("returns 403 if inviting self", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ username: "me" }) });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
@@ -61,10 +61,10 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("returns 403 if user is blocked", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: true } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: true } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ username: "blocked" }) });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
@@ -72,12 +72,12 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("returns 409 if circle is full (capacity check)", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.membership.findUnique)
-      .mockResolvedValueOnce({ role: "CREATOR" } as any) // auth check
+      .mockResolvedValueOnce({ role: "CREATOR" } as never) // auth check
       .mockResolvedValueOnce(null); // active member check
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5 } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as any);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5 } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as never);
     
     // capacity: 3 active + 2 pending = 5 (full)
     vi.mocked(prisma.membership.count).mockResolvedValue(3);
@@ -89,15 +89,15 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("returns 409 if active pending invite exists", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.membership.findUnique)
-      .mockResolvedValueOnce({ role: "CREATOR" } as any)
+      .mockResolvedValueOnce({ role: "CREATOR" } as never)
       .mockResolvedValueOnce(null);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5 } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as any);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5 } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as never);
     vi.mocked(prisma.membership.count).mockResolvedValue(1);
     vi.mocked(prisma.circleInvite.count).mockResolvedValue(0);
-    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({ status: "PENDING" } as any);
+    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({ status: "PENDING" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ username: "user2" }) });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
@@ -105,16 +105,16 @@ describe("/api/circles/[id]/invites", () => {
   });
 
   it("upserts invite and sends notification on success", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.membership.findUnique)
-      .mockResolvedValueOnce({ role: "CREATOR" } as any)
+      .mockResolvedValueOnce({ role: "CREATOR" } as never)
       .mockResolvedValueOnce(null);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5, name: "Circle" } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as any);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING", totalSlots: 5, name: "Circle" } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-2", blockedFromCircles: false } as never);
     vi.mocked(prisma.membership.count).mockResolvedValue(1);
     vi.mocked(prisma.circleInvite.count).mockResolvedValue(0);
-    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({ status: "DECLINED" } as any);
-    vi.mocked(prisma.circleInvite.upsert).mockResolvedValue({ id: "inv-1" } as any);
+    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({ status: "DECLINED" } as never);
+    vi.mocked(prisma.circleInvite.upsert).mockResolvedValue({ id: "inv-1" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST", body: JSON.stringify({ username: "user2" }) });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });

@@ -47,7 +47,7 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 404 if invite not found or expired", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -56,13 +56,13 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 403 if invite belongs to someone else", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-2",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
+    } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
@@ -70,16 +70,16 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 403 if user blocked from circles", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
       invitedUserId: "user-1",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: true } as any);
-    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: true } as never);
+    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
@@ -87,17 +87,17 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("returns 409 if circle is full", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
       invitedUserId: "user-1",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as any);
-    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5 } as any);
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as never);
+    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5 } as never);
     vi.mocked(prisma.membership.count).mockResolvedValue(5); // full
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -106,17 +106,17 @@ describe("/api/invites/[id]/accept", () => {
   });
 
   it("handles P2002 conflict by returning 409", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
       invitedUserId: "user-1",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as any);
-    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5, status: "FORMING" } as any);
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as never);
+    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5, status: "FORMING" } as never);
     vi.mocked(prisma.membership.count).mockResolvedValue(2);
     
     vi.mocked(prisma.$transaction).mockRejectedValue(
@@ -129,22 +129,22 @@ describe("/api/invites/[id]/accept", () => {
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
     expect(res.status).toBe(409);
-    const data = await res.json();
-    expect(data.error).toMatch(/Another user joined at the exact same time/);
+    const { error } = await res.json();
+    expect(error).toMatch(/Another user joined at the exact same time/);
   });
 
   it("accepts invite successfully", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       circleId: "circle-1",
       invitedUserId: "user-1",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as any);
-    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5, status: "FORMING" } as any);
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as never);
+    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ id: "circle-1", totalSlots: 5, status: "FORMING" } as never);
     vi.mocked(prisma.membership.count).mockResolvedValue(2);
     
     vi.mocked(prisma.$transaction).mockResolvedValue({ id: "mem-1" });

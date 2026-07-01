@@ -28,7 +28,7 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("returns 404 if invite not found or expired", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -37,13 +37,13 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("returns 403 if invite belongs to someone else", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-2",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
+    } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
@@ -51,14 +51,14 @@ describe("/api/invites/[id]/decline", () => {
   });
 
   it("declines invite successfully", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
       id: "inv-1",
       invitedUserId: "user-1",
       status: "PENDING",
       expiresAt: new Date(Date.now() + 10000),
-    } as any);
-    vi.mocked(prisma.circleInvite.update).mockResolvedValue({} as any);
+    } as never);
+    vi.mocked(prisma.circleInvite.update).mockResolvedValue({} as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });

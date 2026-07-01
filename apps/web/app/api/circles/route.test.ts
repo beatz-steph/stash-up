@@ -33,7 +33,7 @@ describe("/api/circles", () => {
 
     it("returns 400 for invalid body", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1", emailVerified: true }) as any
+        createMockSession({ id: "user-1", emailVerified: true })
       );
       const req = new NextRequest("http://localhost/api/circles", {
         method: "POST",
@@ -45,10 +45,10 @@ describe("/api/circles", () => {
 
     it("returns 403 if blocked from circles", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1", emailVerified: true }) as any
+        createMockSession({ id: "user-1", emailVerified: true })
       );
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: true } as any);
-      vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: true } as never);
+      vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
       const req = new NextRequest("http://localhost/api/circles", {
         method: "POST",
         body: JSON.stringify({
@@ -61,16 +61,16 @@ describe("/api/circles", () => {
       });
       const res = await POST(req);
       expect(res.status).toBe(403);
-      expect(await res.json()).toEqual({ error: "You are blocked from participating in circles" });
+      expect(await res.json()).toEqual({ success: false, error: "You are blocked from participating in circles" });
     });
 
     it("creates circle and membership successfully", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1", emailVerified: true }) as any
+        createMockSession({ id: "user-1", emailVerified: true })
       );
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as any);
-      vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as any);
-      vi.mocked(prisma.circle.create).mockResolvedValue({ id: "circle-1" } as any);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-1", blockedFromCircles: false } as never);
+      vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({ id: "wa-1" } as never);
+      vi.mocked(prisma.circle.create).mockResolvedValue({ id: "circle-1" } as never);
       
       const req = new NextRequest("http://localhost/api/circles", {
         method: "POST",
@@ -98,7 +98,7 @@ describe("/api/circles", () => {
 
     it("returns circles for user", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1" }) as any
+        createMockSession({ id: "user-1" })
       );
       vi.mocked(prisma.circle.findMany).mockResolvedValue([
         {
@@ -112,12 +112,12 @@ describe("/api/circles", () => {
           createdAt: new Date(),
           memberships: [{ role: "CREATOR", status: "ACTIVE" }],
           _count: { memberships: 1 },
-        } as any,
+        } as never,
       ]);
       const req = new NextRequest("http://localhost/api/circles", { method: "GET" });
       const res = await GET(req);
       expect(res.status).toBe(200);
-      const data = await res.json();
+      const { data } = await res.json();
       expect(data).toHaveLength(1);
       expect(data[0].myRole).toBe("CREATOR");
       expect(data[0].filledSlots).toBe(1);

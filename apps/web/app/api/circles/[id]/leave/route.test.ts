@@ -29,7 +29,7 @@ describe("/api/circles/[id]/leave", () => {
   });
 
   it("returns 403 if not a member", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.membership.findUnique).mockResolvedValue(null);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
@@ -38,9 +38,9 @@ describe("/api/circles/[id]/leave", () => {
   });
 
   it("returns 403 if circle is not FORMING", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "ACTIVE" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "ACTIVE" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
@@ -48,22 +48,22 @@ describe("/api/circles/[id]/leave", () => {
   });
 
   it("returns 403 if creator tries to leave", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
     expect(res.status).toBe(403);
-    const data = await res.json();
-    expect(data.error).toBe("Creator cannot leave the circle. Cancel the circle instead.");
+    const { error } = await res.json();
+    expect(error).toBe("Creator cannot leave the circle. Cancel the circle instead.");
   });
 
   it("leaves circle successfully by deleting membership", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as any);
-    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as any);
-    vi.mocked(prisma.membership.delete).mockResolvedValue({} as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as never);
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({ status: "FORMING" } as never);
+    vi.mocked(prisma.membership.delete).mockResolvedValue({} as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });

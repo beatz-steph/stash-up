@@ -6,7 +6,6 @@ import { createMockSession } from "@test/mocks/auth"
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
-type Session = Awaited<ReturnType<typeof getSession>>
 
 describe("GET /api/onboarding/status", () => {
   it("returns 401 when unauthorized", async () => {
@@ -17,7 +16,7 @@ describe("GET /api/onboarding/status", () => {
 
   it("returns 200 with status when authenticated", async () => {
     vi.mocked(getSession).mockResolvedValue(
-      createMockSession({ id: "user-1", emailVerified: true }) as Session
+      createMockSession({ id: "user-1", emailVerified: true })
     )
     vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue({
       id: "wa-1",
@@ -32,7 +31,7 @@ describe("GET /api/onboarding/status", () => {
 
     const response = await GET()
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
+    expect((await response.json()).data).toEqual({
       account: true,
       verified: true,
       withdrawal: true,

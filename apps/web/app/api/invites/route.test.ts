@@ -28,7 +28,7 @@ describe("/api/invites", () => {
   });
 
   it("returns list of invites", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findMany).mockResolvedValue([
       {
         id: "inv-1",
@@ -37,12 +37,12 @@ describe("/api/invites", () => {
         circle: { id: "circle-1", name: "Test Circle", contributionMinor: 1000, frequency: "WEEKLY" },
         invitedBy: { name: "Creator", username: "creator" },
       },
-    ] as any);
+    ] as never);
     
     const req = new NextRequest("http://localhost/api/invites", { method: "GET" });
     const res = await GET(req);
     expect(res.status).toBe(200);
-    const data = await res.json();
+    const { data } = await res.json();
     expect(data).toHaveLength(1);
     expect(data[0].circle.name).toBe("Test Circle");
   });

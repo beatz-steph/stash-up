@@ -31,7 +31,7 @@ describe("/api/circles/[id]", () => {
 
     it("returns 403 if not a member", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1" }) as any
+        createMockSession({ id: "user-1" })
       );
       vi.mocked(prisma.membership.findUnique).mockResolvedValue(null);
       
@@ -42,9 +42,9 @@ describe("/api/circles/[id]", () => {
 
     it("returns 404 if circle not found", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1" }) as any
+        createMockSession({ id: "user-1" })
       );
-      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);
+      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as never);
       vi.mocked(prisma.circle.findUnique).mockResolvedValue(null);
       
       const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
@@ -54,9 +54,9 @@ describe("/api/circles/[id]", () => {
 
     it("returns circle details", async () => {
       vi.mocked(getSession).mockResolvedValue(
-        createMockSession({ id: "user-1" }) as any
+        createMockSession({ id: "user-1" })
       );
-      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as any);
+      vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "mem-1" } as never);
       vi.mocked(prisma.circle.findUnique).mockResolvedValue({
         id: "circle-1",
         name: "Test",
@@ -79,12 +79,12 @@ describe("/api/circles/[id]", () => {
           expiresAt: new Date(),
           invitedUser: { id: "user-2", name: "User 2", username: "user2", image: null }
         }]
-      } as any);
+      } as never);
       
       const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
       const res = await GET(req, { params: Promise.resolve({ id: "circle-1" }) });
       expect(res.status).toBe(200);
-      const data = await res.json();
+      const { data } = await res.json();
       expect(data.name).toBe("Test");
       expect(data.members).toHaveLength(1);
       expect(data.invites).toHaveLength(1);

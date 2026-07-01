@@ -29,17 +29,17 @@ describe("/api/circles/[id]/invites/[inviteId]/cancel", () => {
   });
 
   it("returns 403 if not creator", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "MEMBER" } as never);
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1", inviteId: "invite-1" }) });
     expect(res.status).toBe(403);
   });
 
   it("cancels invite successfully", async () => {
-    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }) as any);
-    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as any);
-    vi.mocked(prisma.circleInvite.update).mockResolvedValue({ id: "invite-1", status: "CANCELLED" } as any);
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
+    vi.mocked(prisma.membership.findUnique).mockResolvedValue({ role: "CREATOR" } as never);
+    vi.mocked(prisma.circleInvite.update).mockResolvedValue({ id: "invite-1", status: "CANCELLED" } as never);
     
     const req = new NextRequest("http://localhost", { method: "POST" });
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1", inviteId: "invite-1" }) });
