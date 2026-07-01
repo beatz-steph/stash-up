@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { Loader2 } from "lucide-react"
 
-import { CreateCircleReqSchema } from "@/app/api/circles/dto/circles.dto"
 import { useCreateCircle } from "../mutations"
 import { nairaToMinor } from "@/lib/money"
+import { DatePicker } from "@/components/date-picker"
 
 import {
   Form,
@@ -21,11 +21,16 @@ import {
 } from "@workspace/ui/components/form"
 import { Input } from "@workspace/ui/components/input"
 import { Button } from "@workspace/ui/components/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { Card, CardContent } from "@workspace/ui/components/card"
 
-// We create a frontend schema where contribution is a string (since it comes from an input)
-// then we transform it to a number before passing it to the mutation.
+// Inputs arrive as strings; transform to numbers/Date before sending to the API.
 const formSchema = z.object({
   name: z.string().min(1, "Circle name is required"),
   contributionNaira: z.string().refine((val) => {
@@ -37,9 +42,9 @@ const formSchema = z.object({
     const num = parseInt(val, 10)
     return !isNaN(num) && num >= 2
   }, "Circle must have at least 2 slots"),
-  startDeadline: z.string().refine((val) => {
-    return new Date(val) > new Date()
-  }, "Start deadline must be in the future"),
+  startDeadline: z
+    .date({ message: "Pick a start deadline" })
+    .refine((val) => val > new Date(), "Start deadline must be in the future"),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -55,33 +60,29 @@ export function CreateCircleForm() {
       contributionNaira: "",
       frequency: "MONTHLY",
       totalSlots: "",
-      startDeadline: "",
+      startDeadline: undefined,
     },
   })
 
   function onSubmit(data: FormValues) {
-    const contributionMinor = nairaToMinor(parseFloat(data.contributionNaira))
-    const totalSlots = parseInt(data.totalSlots, 10)
-    const startDeadline = new Date(data.startDeadline)
-
     createCircle(
       {
         name: data.name,
-        contributionMinor,
+        contributionMinor: nairaToMinor(parseFloat(data.contributionNaira)),
         frequency: data.frequency,
-        totalSlots,
-        startDeadline,
+        totalSlots: parseInt(data.totalSlots, 10),
+        startDeadline: data.startDeadline,
       },
       {
         onSuccess: (circle) => {
           router.push(`/circles/${circle.id}`)
         },
-      }
+      },
     )
   }
 
   return (
-    <Card className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-base">
+    <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
       <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -90,16 +91,16 @@ export function CreateCircleForm() {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Circle Name</FormLabel>
+                  <FormLabel>Circle name</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Vacation Fund" {...field} />
+                    <Input placeholder="e.g. Vacation Fund" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="contributionNaira"
@@ -139,13 +140,13 @@ export function CreateCircleForm() {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <FormField
                 control={form.control}
                 name="totalSlots"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Total Members</FormLabel>
+                    <FormLabel>Total members</FormLabel>
                     <FormControl>
                       <Input type="number" min="2" placeholder="5" {...field} />
                     </FormControl>
@@ -159,21 +160,26 @@ export function CreateCircleForm() {
                 control={form.control}
                 name="startDeadline"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Start Deadline</FormLabel>
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Start deadline</FormLabel>
                     <FormControl>
-                      <Input type="datetime-local" {...field} />
+                      <DatePicker
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="Select a date"
+                        fromToday
+                      />
                     </FormControl>
-                    <FormDescription>When does the circle officially start?</FormDescription>
+                    <FormDescription>All slots must be filled by this date</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isPending}>
+            <Button type="submit" className="w-full rounded-su-pill" disabled={isPending}>
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Circle
+              Create circle
             </Button>
           </form>
         </Form>

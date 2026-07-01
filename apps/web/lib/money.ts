@@ -12,3 +12,15 @@ export function minorToNaira(minor: number): number {
 export function nairaToMinor(naira: number): number {
   return Math.round(naira * 100);
 }
+
+/**
+ * Format a kobo amount as a display string, e.g. 1000000 → "₦10,000.00".
+ * Never expose raw kobo integers to the UI — always run amounts through this.
+ */
+export function formatNaira(minor: number): string {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+  }).format(minorToNaira(minor));
+}

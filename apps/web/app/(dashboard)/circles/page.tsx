@@ -1,33 +1,29 @@
-import { SidebarTrigger } from "@workspace/ui/components/sidebar"
+import Link from "next/link"
+import { Plus } from "lucide-react"
+
+import { Button } from "@workspace/ui/components/button"
 import { CirclesList } from "@/features/circles/components/circles-list"
-import { NotificationBell } from "@/features/notifications/components/notification-bell"
+import { DashboardHeader, PageHeading, PageContent } from "../components/dashboard-header"
 
 export default function CirclesPage() {
   return (
-    <div className="flex flex-col flex-1 h-full">
-      {/* Top Navigation */}
-      <nav className="bg-su-canvas h-16 border-b border-su-hairline-soft px-4 sm:px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-        </div>
-        <div className="flex items-center gap-4">
-          <NotificationBell />
-        </div>
-      </nav>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-[1000px] w-full mx-auto p-6 sm:p-8 space-y-8">
-        <div className="space-y-1">
-          <h1 className="font-su-sans text-su-title-lg font-semibold text-su-ink">
-            My Circles
-          </h1>
-          <p className="font-su-sans text-su-body-sm text-su-muted">
-            Manage your active and forming savings circles.
-          </p>
-        </div>
-
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader />
+      <PageContent>
+        <PageHeading
+          title="My circles"
+          subtitle="Manage your active and forming savings circles."
+          action={
+            <Button asChild className="rounded-su-pill">
+              <Link href="/circles/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New circle
+              </Link>
+            </Button>
+          }
+        />
         <CirclesList />
-      </main>
+      </PageContent>
     </div>
   )
 }

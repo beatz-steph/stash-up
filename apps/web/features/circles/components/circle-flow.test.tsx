@@ -102,15 +102,17 @@ describe("Circle Frontend Flow", () => {
       </QueryClientProvider>
     )
 
-    await user.type(screen.getByLabelText(/Circle Name/i), "My New Circle")
+    await user.type(screen.getByLabelText(/Circle name/i), "My New Circle")
     await user.type(screen.getByLabelText(/Contribution/i), "5000")
-    await user.type(screen.getByLabelText(/Total Members/i), "5")
-    
-    // For date input, testing-library typing can be tricky; we'll simulate filling it
-    // Usually datetime-local expects standard ISO format without seconds/Z
-    await user.type(screen.getByLabelText(/Start Deadline/i), "2027-01-01T12:00")
+    await user.type(screen.getByLabelText(/Total members/i), "5")
 
-    await user.click(screen.getByRole("button", { name: /Create Circle/i }))
+    // Date picker: open the calendar, jump to next month (always in the future),
+    // and pick the 15th — day buttons are labelled like "Friday, January 15th, 2027".
+    await user.click(screen.getByRole("button", { name: /select a date/i }))
+    await user.click(screen.getByRole("button", { name: /go to the next month/i }))
+    await user.click(screen.getByRole("button", { name: /15th/i }))
+
+    await user.click(screen.getByRole("button", { name: /Create circle/i }))
 
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/circles/circle-new")
@@ -126,7 +128,7 @@ describe("Circle Frontend Flow", () => {
     )
 
     // Submit without filling fields
-    await user.click(screen.getByRole("button", { name: /Create Circle/i }))
+    await user.click(screen.getByRole("button", { name: /Create circle/i }))
 
     await waitFor(() => {
       expect(screen.getByText(/Circle name is required/i)).toBeInTheDocument()
@@ -165,8 +167,10 @@ describe("Circle Frontend Flow", () => {
     })
 
     const user = userEvent.setup()
-    await user.type(screen.getByPlaceholderText(/Enter username/i), "friend")
-    await user.click(screen.getByRole("button", { name: "Invite" }))
+    // Invite is now a dialog: open it, fill the username, submit.
+    await user.click(screen.getByRole("button", { name: /invite member/i }))
+    await user.type(screen.getByPlaceholderText(/username/i), "friend")
+    await user.click(screen.getByRole("button", { name: /send invite/i }))
 
     await waitFor(() => {
       expect(screen.getByText("User already invited")).toBeInTheDocument()
