@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { getCookieCache } from "better-auth/cookies"
+import { getSessionCookie } from "better-auth/cookies"
 
 // Define public routes that do not require authentication
 const publicRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"]
@@ -20,9 +20,9 @@ export async function proxy(request: NextRequest) {
   }
 
   // Check for session cookie presence
-  const session = await getCookieCache(request)
+  const sessionToken = getSessionCookie(request)
 
-  if (!session) {
+  if (!sessionToken) {
     if (isApiRoute) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     } else {
