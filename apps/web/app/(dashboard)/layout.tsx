@@ -1,8 +1,5 @@
-import { getSession } from "@/lib/session"
 import { requireSession } from "@/lib/session"
 import { ReactNode } from "react"
-import { headers } from "next/headers"
-import { redirect } from "next/navigation"
 import { AppSidebar } from "./components/app-sidebar"
 import {
   SidebarProvider,
@@ -18,10 +15,7 @@ export default async function DashboardLayout({
 }: {
   children: ReactNode
 }) {
-  const session = await getSession()
-
-  
-
+  const session = await requireSession()
   const { user } = session
 
   const onboardingStatus = await fetchOnboardingStatus(await serverApiOptions())
