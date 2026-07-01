@@ -1,19 +1,19 @@
 import { api, type ApiOptions } from "../../client"
-import {
-  WithdrawalAccountSchema,
-  ResolveAccountResSchema,
-  type SaveWithdrawalAccountReq,
-  type ResolveAccountReq,
+import type {
+  WithdrawalAccount,
+  ResolveAccountRes,
+  SaveWithdrawalAccountReq,
+  ResolveAccountReq,
 } from "@/app/api/withdrawal-account/dto/withdrawal-account.dto"
 
 export function fetchWithdrawalAccount(options?: ApiOptions) {
-  return api.get("/api/withdrawal-account", WithdrawalAccountSchema.nullable(), options)
+  return api.get<WithdrawalAccount | null>("/api/withdrawal-account", options)
 }
 
 export function saveWithdrawalAccount(body: SaveWithdrawalAccountReq, options?: ApiOptions) {
-  return api.post("/api/withdrawal-account", body, WithdrawalAccountSchema, options)
+  return api.post<WithdrawalAccount>("/api/withdrawal-account", body, options)
 }
 
 export function resolveAccountName(body: ResolveAccountReq, options?: ApiOptions) {
-  return api.post("/api/withdrawal-account/resolve", body, ResolveAccountResSchema, options)
+  return api.post<ResolveAccountRes>("/api/withdrawal-account/resolve", body, options)
 }

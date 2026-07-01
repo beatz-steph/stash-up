@@ -9,11 +9,7 @@
  *
  * - Client (browser): call wrappers with no options → same-origin, cookies sent automatically.
  * - Server Components: pass `await serverApiOptions()` → absolute origin + forwarded cookies.
- *
- * Pass a Zod schema to validate (and infer the type of) the response. Without one,
- * the response is cast to `T` and trusted.
  */
-import type { z } from "zod"
 
 export interface ApiOptions {
   /** Absolute origin for server-side calls; empty (same-origin) on the client. */
@@ -27,7 +23,6 @@ async function request<T>(
   method: string,
   path: string,
   body: unknown,
-  schema: z.ZodType<T> | undefined,
   options: ApiOptions,
 ): Promise<T> {
   const { baseUrl = "", headers = {}, signal } = options
@@ -43,22 +38,29 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  const data: unknown = await res.json().catch(() => null)
+  const parsed: unknown = await res.json().catch(() => null)
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === "object"
 
-  if (!res.ok) {
+  if (!res.ok || (isObj(parsed) && parsed.success === false)) {
     const message =
-      data && typeof data === "object" && "error" in data && typeof data.error === "string"
-        ? data.error
+      isObj(parsed) && typeof parsed.error === "string"
+        ? parsed.error
         : `Request failed (${res.status})`
     throw new Error(message)
   }
 
-  return schema ? schema.parse(data) : (data as T)
+  // Support both standardized ApiResponse { success: true, data: T } and legacy/raw responses
+  const payload = isObj(parsed) && parsed.success === true && "data" in parsed
+    ? parsed.data
+    : parsed
+
+  return payload as T
 }
 
 export const api = {
-  get: <T>(path: string, schema?: z.ZodType<T>, options: ApiOptions = {}) =>
-    request<T>("GET", path, undefined, schema, options),
-  post: <T>(path: string, body?: unknown, schema?: z.ZodType<T>, options: ApiOptions = {}) =>
-    request<T>("POST", path, body, schema, options),
+  get: <T>(path: string, options: ApiOptions = {}) =>
+    request<T>("GET", path, undefined, options),
+  post: <T>(path: string, body?: unknown, options: ApiOptions = {}) =>
+    request<T>("POST", path, body, options),
 }

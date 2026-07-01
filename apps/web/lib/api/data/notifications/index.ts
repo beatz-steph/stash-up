@@ -1,14 +1,14 @@
 import { api, type ApiOptions } from "../../client"
-import {
-  NotificationListResSchema,
-  MarkReadResSchema,
-  type MarkReadReq,
+import type {
+  NotificationListRes,
+  MarkReadRes,
+  MarkReadReq,
 } from "@/app/api/notifications/dto/notification.dto"
 
 export function fetchNotifications(options?: ApiOptions) {
-  return api.get("/api/notifications", NotificationListResSchema, options)
+  return api.get<NotificationListRes>("/api/notifications", options)
 }
 
 export function markNotificationsRead(body: MarkReadReq, options?: ApiOptions) {
-  return api.post("/api/notifications/mark-read", body, MarkReadResSchema, options)
+  return api.post<MarkReadRes>("/api/notifications/mark-read", body, options)
 }
