@@ -21,6 +21,7 @@ model User {
   receivedInvites CircleInvite[] @relation("InvitedUser")
   createdCircles  Circle[]       @relation("CircleCreator")
   withdrawalAccount WithdrawalAccount?
+  withdrawalAccountOtp WithdrawalAccountOtp?
   notifications Notification[]
 
   @@map("user")

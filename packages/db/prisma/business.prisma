@@ -343,6 +343,20 @@ model WithdrawalAccount {
   @@map("withdrawal_account")
 }
 
+// One-time code emailed to a user before they may CHANGE an existing withdrawal
+// account (payout destination). Only the sha256 hash of the code is stored.
+model WithdrawalAccountOtp {
+  id        String   @id @default(cuid())
+  userId    String   @unique   // one active OTP per user; re-requesting replaces it
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String   // sha256(code) — never store the plaintext code
+  expiresAt DateTime
+  attempts  Int      @default(0)   // failed verify attempts; lock after a max
+  createdAt DateTime @default(now())
+
+  @@map("withdrawal_account_otp")
+}
+
 model Notification {
   id        String           @id @default(cuid())
   userId    String
