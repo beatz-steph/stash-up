@@ -57,7 +57,7 @@ export async function advanceRotation(
   // above then short-circuits cleanly. Catching-and-returning instead would let
   // Prisma COMMIT an already-aborted Postgres transaction (a silent rollback of
   // the SUCCESS/PAID_OUT writes with no error surfaced) — do NOT add one.
-  await tx.cycle.create({
+  const newCycle = await tx.cycle.create({
     data: {
       circleId: circle.id,
       sequence: nextSequence,
@@ -73,4 +73,44 @@ export async function advanceRotation(
     where: { id: circleId },
     data: { currentCycleSeq: nextSequence },
   });
+
+  // Auto-apply carried-over credit: each ACTIVE member's surplus (bufferMinor)
+  // from previous cycles is applied toward this cycle's contribution, reducing
+  // what they still owe. A member whose buffer covers a full contribution is
+  // marked COMPLETE without transferring anything. Runs exactly once per cycle
+  // (the create above is guarded by the existence pre-check).
+  const contributionMinor = circle.contributionMinor;
+  let potFromBuffers = 0;
+
+  for (const m of circle.memberships) {
+    if (m.status !== "ACTIVE") continue;
+    const buffer = m.bufferMinor ?? 0;
+    const applied = Math.min(buffer, contributionMinor);
+    if (applied <= 0) continue;
+
+    await tx.contribution.create({
+      data: {
+        cycleId: newCycle.id,
+        membershipId: m.id,
+        amountMinor: applied,
+        status: applied >= contributionMinor ? "COMPLETE" : "PARTIAL",
+      },
+    });
+
+    await tx.membership.update({
+      where: { id: m.id },
+      data: { bufferMinor: { decrement: applied } },
+    });
+
+    potFromBuffers += applied;
+  }
+
+  if (potFromBuffers > 0) {
+    // The cycle was just created with potCollectedMinor 0, so these are absolute.
+    const status = potFromBuffers >= potExpectedMinor ? "READY_TO_PAYOUT" : "COLLECTING";
+    await tx.cycle.update({
+      where: { id: newCycle.id },
+      data: { potCollectedMinor: potFromBuffers, status },
+    });
+  }
 }

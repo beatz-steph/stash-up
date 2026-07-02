@@ -134,6 +134,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       paidOutAt: c.paidOutAt,
       payoutStatus: c.payout?.status ?? null,
     })),
+    myBufferMinor:
+      circle.memberships.find((m) => m.userId === session.user.id)?.bufferMinor ?? 0,
   };
 
   return apiSuccess<CircleDetailRes>(response);

@@ -210,6 +210,19 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                   Transfer your contribution to this dedicated account — it&apos;s matched to your
                   circle automatically.
                 </p>
+
+                {(circle.myBufferMinor ?? 0) > 0 && (
+                  <div className="rounded-su-lg border border-su-semantic-up/20 bg-su-semantic-up/5 px-4 py-3">
+                    <p className="font-su-sans text-su-caption text-su-ink">
+                      You have{" "}
+                      <span className="font-su-mono font-semibold text-su-semantic-up [font-feature-settings:'tnum']">
+                        {formatNaira(circle.myBufferMinor ?? 0)}
+                      </span>{" "}
+                      in carried-over credit — it&apos;s automatically applied to your next
+                      contribution.
+                    </p>
+                  </div>
+                )}
                 <div className="rounded-su-lg border border-su-hairline bg-su-surface p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1">

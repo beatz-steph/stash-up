@@ -102,6 +102,8 @@ export const CircleDetailResSchema = z.object({
   currentCycle: CycleDetailSchema.nullable().optional(),
   contributions: z.array(ContributionDetailSchema).optional(),
   cycles: z.array(CycleHistorySchema).optional(),
+  // The requesting member's carried-over credit (auto-applied to their next contribution).
+  myBufferMinor: z.number().int().optional(),
 });
 
 export const InviteResSchema = z.object({
