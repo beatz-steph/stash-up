@@ -69,6 +69,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     },
     include: {
       contributions: true,
+      payout: true,
     },
   });
 
@@ -105,6 +106,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           potCollectedMinor: currentCycle.potCollectedMinor,
           deadline: currentCycle.deadline,
           recipientMembershipId: currentCycle.recipientMembershipId,
+          payout: currentCycle.payout ? {
+            id: currentCycle.payout.id,
+            status: currentCycle.payout.status,
+            amountMinor: currentCycle.payout.amountMinor,
+            failureReason: currentCycle.payout.failureReason,
+          } : null,
         }
       : null,
     contributions: currentCycle

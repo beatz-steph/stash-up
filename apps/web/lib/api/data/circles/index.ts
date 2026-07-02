@@ -68,3 +68,7 @@ export function retryProvisioning(id: string, options?: ApiOptions) {
 export function fetchVirtualAccount(id: string, options?: ApiOptions) {
   return api.get<{ virtualAccount: { bankAccountNumber: string, bankAccountName: string, bankName: string } | null }>(`/api/circles/${id}/virtual-accounts`, options)
 }
+
+export function triggerPayout(id: string, cycleId: string, options?: ApiOptions) {
+  return api.post<{ initiated: boolean }>(`/api/circles/${id}/cycles/${cycleId}/payout`, undefined, options)
+}

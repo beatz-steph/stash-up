@@ -62,6 +62,12 @@ export const CycleDetailSchema = z.object({
   potCollectedMinor: z.number().int(),
   deadline: z.date().or(z.string()),
   recipientMembershipId: z.string(),
+  payout: z.object({
+    id: z.string(),
+    status: z.string(),
+    amountMinor: z.number().int(),
+    failureReason: z.string().nullable().optional(),
+  }).nullable().optional(),
 });
 
 export const ContributionDetailSchema = z.object({

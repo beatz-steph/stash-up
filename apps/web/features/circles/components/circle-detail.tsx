@@ -1,7 +1,7 @@
 "use client"
 
 import { useCircleDetail, useVirtualAccount } from "../queries"
-import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning } from "../mutations"
+import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
@@ -59,6 +59,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const { mutate: cancelInvite, isPending: isCancellingInvite } = useCancelInvite(circleId)
   const { mutate: activateCircle, isPending: isActivating } = useActivateCircle(circleId)
   const { mutate: retryProvisioning, isPending: isRetrying } = useRetryProvisioning(circleId)
+  const { mutate: triggerPayout, isPending: isTriggeringPayout } = useTriggerPayout(circleId)
   
   const { data: vaData } = useVirtualAccount(circleId)
 
@@ -365,6 +366,54 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                       <span>Due: {new Date(circle.currentCycle.deadline).toLocaleDateString()}</span>
                     </div>
                   </div>
+                  {(() => {
+                    const recipient = circle.members.find(m => m.id === circle.currentCycle?.recipientMembershipId);
+                    const isMyTurn = recipient?.user.id === session?.user?.id;
+                    const payoutStatus = circle.currentCycle?.payout?.status || "PENDING";
+                    const payoutStatusColor = {
+                      PENDING: "text-su-muted",
+                      INITIATED: "text-su-accent-yellow",
+                      SUCCESS: "text-su-semantic-up",
+                      FAILED: "text-su-semantic-down"
+                    }[payoutStatus] || "text-su-muted";
+
+                    return (
+                      <div className="rounded-su-lg bg-su-surface p-4 space-y-3 border border-su-hairline mt-4">
+                        <div className="flex justify-between items-center">
+                          <span className="font-su-sans text-su-caption text-su-muted">Recipient</span>
+                          <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+                            {isMyTurn ? "You" : recipient?.user.name}
+                          </span>
+                        </div>
+                        {circle.currentCycle?.status === "PAYOUT_INITIATED" || circle.currentCycle?.status === "PAID_OUT" ? (
+                          <>
+                            <div className="flex justify-between items-center">
+                              <span className="font-su-sans text-su-caption text-su-muted">Payout Status</span>
+                              <span className={`font-su-sans text-su-caption font-semibold ${payoutStatusColor}`}>
+                                {payoutStatus}
+                              </span>
+                            </div>
+                            {circle.currentCycle.payout?.failureReason && (
+                              <p className="font-su-sans text-su-caption text-su-semantic-down">
+                                {circle.currentCycle.payout.failureReason}
+                              </p>
+                            )}
+                          </>
+                        ) : null}
+
+                        {isCreator && circle.currentCycle?.status === "READY_TO_PAYOUT" && (
+                          <Button 
+                            className="w-full rounded-su-pill mt-2" 
+                            onClick={() => triggerPayout(circle.currentCycle!.id)}
+                            disabled={isTriggeringPayout}
+                          >
+                            {isTriggeringPayout ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            Trigger Payout
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

@@ -10,6 +10,7 @@ import {
   declineInvite,
   activateCircle,
   retryProvisioning,
+  triggerPayout,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
@@ -144,6 +145,20 @@ export function useDeclineInvite() {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to decline invite")
+    },
+  })
+}
+
+export function useTriggerPayout(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (cycleId: string) => triggerPayout(circleId, cycleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      toast.success("Payout initiated successfully")
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to initiate payout")
     },
   })
 }
