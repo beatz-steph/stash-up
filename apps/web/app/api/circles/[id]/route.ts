@@ -73,6 +73,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       role: m.role,
       payoutPosition: m.payoutPosition,
       status: m.status,
+      vaProvisionStatus: m.vaProvisionStatus,
     })),
     invites: circle.invites.map((i) => ({
       id: i.id,
