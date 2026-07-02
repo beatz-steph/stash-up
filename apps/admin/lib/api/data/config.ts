@@ -4,3 +4,8 @@ import { configResponseSchema } from "@/app/api/config/dto/config.dto"
 export async function getConfig(options?: ApiOptions) {
   return api.get(`/api/config`, configResponseSchema, options)
 }
+
+export async function toggleConfigStatus(status: "ACTIVE" | "INVALID", options?: ApiOptions) {
+  return api.post(`/api/config/status`, { status }, undefined, options)
+}
+

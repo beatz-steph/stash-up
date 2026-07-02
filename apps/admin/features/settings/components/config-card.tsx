@@ -3,9 +3,13 @@
 import { useConfig } from "../queries/config"
 import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/components/card"
 import { Badge } from "@workspace/ui/components/badge"
+import { authClient } from "@/lib/auth-client"
+import { NombaStatusToggle } from "./nomba-status-toggle"
 
 export function ConfigCard() {
   const { data, isLoading, isError } = useConfig()
+  const { data: sessionData } = authClient.useSession()
+  const isSuperAdmin = sessionData?.user?.role === "SUPER_ADMIN"
 
   if (isLoading) return <div className="text-su-muted">Loading configuration...</div>
   if (isError) return <div className="text-su-semantic-down">Failed to load configuration</div>
@@ -18,9 +22,14 @@ export function ConfigCard() {
           <CardTitle className="font-su-sans text-su-title-lg font-semibold text-su-ink">
             Nomba Integration
           </CardTitle>
-          <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
-            {data.status}
-          </Badge>
+          <div className="flex items-center gap-4">
+            {isSuperAdmin && (
+              <NombaStatusToggle status={data.status} />
+            )}
+            <Badge variant={data.status === "ACTIVE" ? "default" : "destructive"}>
+              {data.status}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
