@@ -64,3 +64,18 @@ export async function acquirePayoutLock(cycleId: string): Promise<boolean> {
 export async function releasePayoutLock(cycleId: string): Promise<void> {
   await redis.del(`payout:lock:${cycleId}`);
 }
+
+export async function acquireActivationLock(circleId: string): Promise<boolean> {
+  const result = await redis.set(
+    `activation:lock:${circleId}`,
+    "1",
+    "EX",
+    300,
+    "NX"
+  );
+  return result === "OK";
+}
+
+export async function releaseActivationLock(circleId: string): Promise<void> {
+  await redis.del(`activation:lock:${circleId}`);
+}

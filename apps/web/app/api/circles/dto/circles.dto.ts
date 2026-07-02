@@ -38,6 +38,7 @@ export const MemberDetailSchema = z.object({
   role: z.string(),
   payoutPosition: z.number().int(),
   status: z.string(),
+  vaProvisionStatus: z.string(),
 });
 
 export const InviteDetailSchema = z.object({

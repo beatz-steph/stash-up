@@ -183,11 +183,11 @@ model VirtualAccount {
   provider            String     @default("NOMBA")
   // accountRef is our reference sent to Nomba at VA creation — webhook lookup key
   accountRef          String     @unique   // = "membership_{membershipId}"
-  providerAccountRef  String               // Nomba's own VA id (for suspend/manage calls)
+  providerAccountRef  String               // Nomba returns no separate VA id, so we store accountRef here as a stand-in (for future suspend/manage calls)
   bankAccountNumber   String               // issued by Nomba — shown to member for transfers
   bankAccountName     String
   bankName            String
-  bankCode            String               // NIBSS bank code — needed for Transfers API payout
+  bankCode            String               // Nomba's VA-creation response returns no bank code; stored as "" and unused. Payouts route to WithdrawalAccount.bankCode, NOT this field.
   status              VAStatus   @default(ACTIVE)
   createdAt           DateTime   @default(now())
 

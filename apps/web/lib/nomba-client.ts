@@ -120,6 +120,18 @@ interface CreateVirtualAccountParams {
   bvn?: string;
 }
 
+import { z } from "zod";
+
+const VirtualAccountResponseSchema = z.object({
+  bankAccountNumber: z.string(),
+  bankAccountName: z.string(),
+  bankName: z.string().optional().default("Nombank MFB"),
+  // bankCode is not returned by Nomba's VA creation endpoint.
+  // It is unused functionally because we only do outbound payouts to external WithdrawalAccounts (which have real bankCodes).
+  bankCode: z.string().optional().default(""),
+  accountRef: z.string(),
+});
+
 export async function createVirtualAccount(params: CreateVirtualAccountParams) {
   const res = await nombaFetch(`/v1/accounts/virtual/${SUB_ACCOUNT_ID}`, {
     method: "POST",
@@ -135,13 +147,7 @@ export async function createVirtualAccount(params: CreateVirtualAccountParams) {
   }
 
   const data = await res.json();
-  return data.data as {
-    accountNumber: string;
-    accountName: string;
-    bankName: string;
-    bankCode: string;
-    accountRef: string;
-  };
+  return VirtualAccountResponseSchema.parse(data.data);
 }
 
 interface BankTransferParams {
