@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Progress } from "@workspace/ui/components/progress"
 import { Button, buttonVariants } from "@workspace/ui/components/button"
-import { CheckIcon, LockIcon, Loader2 } from "lucide-react"
+import { CheckIcon, LockIcon, Loader2, X } from "lucide-react"
 import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "@/lib/auth-client"
 import { isOnboardingComplete } from "../functions"
@@ -24,16 +24,35 @@ export function OnboardingBanner({ status, userEmail, hasCircles = false }: Onbo
   const router = useRouter()
   const [resending, setResending] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    if (localStorage.getItem("onboarding-banner-dismissed") === "true") {
+      setDismissed(true)
+    }
+  }, [])
+
+  const handleDismiss = () => {
+    setDismissed(true)
+    localStorage.setItem("onboarding-banner-dismissed", "true")
+  }
 
   const { account, verified, withdrawal } = status
 
   // ── Setup complete → unlock circles ────────────────────────────────────────
   if (isOnboardingComplete(status)) {
     // Once they're in a circle, the celebration/CTA has served its purpose.
-    if (hasCircles) return null
+    if (hasCircles || dismissed) return null
 
     return (
-      <div className="bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="relative bg-su-surface-card border border-su-hairline rounded-su-xl p-su-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <button 
+          onClick={handleDismiss}
+          className="absolute top-2 right-2 text-su-muted hover:text-su-ink transition-colors p-1"
+          aria-label="Dismiss banner"
+        >
+          <X className="h-4 w-4" />
+        </button>
         <div className="space-y-1">
           <h3 className="font-su-sans text-su-title-md font-semibold text-su-ink flex items-center gap-2">
             <span>You&apos;re all set 🎉</span>

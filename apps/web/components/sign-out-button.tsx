@@ -18,6 +18,7 @@ export function SignOutButton() {
       fetchOptions: {
         onSuccess: () => {
           queryClient.clear()
+          localStorage.clear()
           resetUser()
           router.push("/sign-in")
           router.refresh()
