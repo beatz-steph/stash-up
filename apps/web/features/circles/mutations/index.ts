@@ -8,10 +8,48 @@ import {
   cancelInvite,
   acceptInvite,
   declineInvite,
+  activateCircle,
+  retryProvisioning,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
 import { CIRCLE_QUERY_KEYS } from "../queries"
+
+export function useActivateCircle(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => activateCircle(circleId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      if (res.activated) {
+        toast.success("Circle activated successfully!")
+      } else {
+        toast.warning("Activation partial failure, please retry")
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to activate circle")
+    },
+  })
+}
+
+export function useRetryProvisioning(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => retryProvisioning(circleId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      if (res.activated) {
+        toast.success("Retry successful, circle activated!")
+      } else {
+        toast.warning("Retry partial failure, please try again")
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to retry provisioning")
+    },
+  })
+}
 
 export function useCreateCircle() {
   const queryClient = useQueryClient()

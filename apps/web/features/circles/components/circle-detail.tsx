@@ -1,7 +1,7 @@
 "use client"
 
-import { useCircleDetail } from "../queries"
-import { useCancelCircle, useLeaveCircle, useCancelInvite } from "../mutations"
+import { useCircleDetail, useVirtualAccount } from "../queries"
+import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
@@ -57,6 +57,10 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const { mutate: cancelCircle, isPending: isCancellingCircle } = useCancelCircle()
   const { mutate: leaveCircle, isPending: isLeavingCircle } = useLeaveCircle()
   const { mutate: cancelInvite, isPending: isCancellingInvite } = useCancelInvite(circleId)
+  const { mutate: activateCircle, isPending: isActivating } = useActivateCircle(circleId)
+  const { mutate: retryProvisioning, isPending: isRetrying } = useRetryProvisioning(circleId)
+  
+  const { data: vaData } = useVirtualAccount(circleId)
 
   if (isLoading) {
     return (
@@ -78,10 +82,13 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const isCreator = myMembership?.role === "CREATOR"
   const isForming = circle.status === "FORMING"
 
-  const activeMembersCount = circle.members.length
+  const activeMembersCount = circle.members.filter(m => m.status === "ACTIVE").length
   const pendingInvitesCount = circle.invites.filter((i) => i.status === "PENDING").length
   const slotsFilled = activeMembersCount + pendingInvitesCount
   const pct = Math.round((slotsFilled / circle.totalSlots) * 100)
+
+  const hasFailedProvisioning = circle.members.some(m => m.vaProvisionStatus === "FAILED")
+  const isFullAndActive = activeMembersCount === circle.totalSlots
 
   return (
     <div className="space-y-8">
@@ -321,16 +328,75 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 <Progress value={pct} className="h-2" />
               </div>
 
-              {isCreator && isForming && slotsFilled < circle.totalSlots && (
+              {isCreator && isForming && activeMembersCount < circle.totalSlots && (
                 <div className="border-t border-su-hairline-soft pt-5">
                   <InviteMemberDialog circleId={circle.id} />
                 </div>
               )}
 
-              {isCreator && isForming && slotsFilled >= circle.totalSlots && (
-                <p className="rounded-su-md bg-su-surface-soft px-3 py-2 text-center font-su-sans text-su-caption text-su-muted">
-                  All slots are filled.
-                </p>
+              {isCreator && isForming && isFullAndActive && (
+                <div className="border-t border-su-hairline-soft pt-5 space-y-3">
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    All slots are filled with active members. You can now activate the circle to generate funding accounts.
+                  </p>
+                  <Button 
+                    className="w-full rounded-su-pill" 
+                    onClick={() => activateCircle()}
+                    disabled={isActivating || isRetrying}
+                  >
+                    {(isActivating || isRetrying) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Activate Circle
+                  </Button>
+                  {hasFailedProvisioning && (
+                    <Button 
+                      variant="outline"
+                      className="w-full rounded-su-pill text-su-semantic-down"
+                      onClick={() => retryProvisioning()}
+                      disabled={isActivating || isRetrying}
+                    >
+                      Retry Failed Accounts
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {!isForming && vaData?.virtualAccount && (
+                <div className="border-t border-su-hairline-soft pt-5 space-y-4">
+                  <h3 className="font-su-sans text-su-caption-sm font-semibold text-su-ink uppercase tracking-wider">Fund Your Circle</h3>
+                  <div className="rounded-su-lg bg-su-surface p-4 space-y-3 border border-su-hairline">
+                    <div className="flex justify-between items-center">
+                      <span className="font-su-sans text-su-caption text-su-muted">Amount Due</span>
+                      <span className="font-su-mono text-su-body-sm font-semibold text-su-ink">
+                        {formatNaira(circle.contributionMinor)}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="font-su-sans text-su-caption text-su-muted">Bank Name</span>
+                      <p className="font-su-sans text-su-body-sm text-su-ink">{vaData.virtualAccount.bankName}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="font-su-sans text-su-caption text-su-muted">Account Number</span>
+                      <div className="flex items-center gap-2">
+                        <p className="font-su-mono text-su-body-sm text-su-ink">{vaData.virtualAccount.bankAccountNumber}</p>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-6 px-2 text-su-muted hover:text-su-ink"
+                          onClick={() => {
+                            navigator.clipboard.writeText(vaData.virtualAccount!.bankAccountNumber);
+                            toast.success("Account number copied");
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="font-su-sans text-su-caption text-su-muted">Account Name</span>
+                      <p className="font-su-sans text-su-body-sm text-su-ink">{vaData.virtualAccount.bankAccountName}</p>
+                    </div>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

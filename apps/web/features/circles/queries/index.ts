@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchMyCircles, fetchCircle, fetchMyInvites } from "@/lib/api/data/circles"
+import { fetchMyCircles, fetchCircle, fetchMyInvites, fetchVirtualAccount } from "@/lib/api/data/circles"
 
 export const CIRCLE_QUERY_KEYS = {
   all: ["circles"] as const,
@@ -27,5 +27,13 @@ export function useMyInvites() {
   return useQuery({
     queryKey: CIRCLE_QUERY_KEYS.myInvites(),
     queryFn: () => fetchMyInvites(),
+  })
+}
+
+export function useVirtualAccount(circleId: string) {
+  return useQuery({
+    queryKey: [...CIRCLE_QUERY_KEYS.detail(circleId), "virtual-account"],
+    queryFn: () => fetchVirtualAccount(circleId),
+    enabled: !!circleId,
   })
 }

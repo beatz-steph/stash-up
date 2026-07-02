@@ -56,3 +56,15 @@ export function acceptInvite(id: string, options?: ApiOptions) {
 export function declineInvite(id: string, options?: ApiOptions) {
   return api.post<{ success: boolean }>(`/api/invites/${id}/decline`, undefined, options)
 }
+
+export function activateCircle(id: string, options?: ApiOptions) {
+  return api.post<{ activated: boolean }>(`/api/circles/${id}/activate`, undefined, options)
+}
+
+export function retryProvisioning(id: string, options?: ApiOptions) {
+  return api.post<{ activated: boolean }>(`/api/circles/${id}/provisioning/retry`, undefined, options)
+}
+
+export function fetchVirtualAccount(id: string, options?: ApiOptions) {
+  return api.get<{ virtualAccount: { bankAccountNumber: string, bankAccountName: string, bankName: string } | null }>(`/api/circles/${id}/virtual-accounts`, options)
+}
