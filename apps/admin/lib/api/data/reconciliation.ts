@@ -11,3 +11,11 @@ export async function getReconciliationQueue(
 
   return api.get(`/api/reconciliation?${searchParams.toString()}`, reconciliationListResponseSchema, options)
 }
+
+export async function resolveTransfer(
+  id: string,
+  data: { matchedCycleId?: string; matchedMembershipId?: string },
+  options?: ApiOptions
+) {
+  return api.post(`/api/reconciliation/${id}/resolve`, data, undefined, options)
+}

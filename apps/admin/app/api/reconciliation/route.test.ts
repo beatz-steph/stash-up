@@ -10,6 +10,13 @@ vi.mock("@workspace/db", () => ({
       count: vi.fn(),
     },
   },
+  MatchStatus: {
+    MATCHED: "MATCHED",
+    MANUAL: "MANUAL",
+    UNMATCHED: "UNMATCHED",
+    OVERPAID: "OVERPAID",
+    UNDERPAID: "UNDERPAID",
+  },
 }))
 
 vi.mock("@/lib/access-control", () => ({
@@ -50,5 +57,11 @@ describe("GET /api/reconciliation", () => {
     expect(data.items.length).toBe(1)
     expect(data.items[0].senderName).toBe("Jane Doe") // Not masked
     expect(data.items[0].senderAccountNumber).toBe("••••3210") // Masked
+
+    expect(prisma.inboundTransfer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { matchStatus: { notIn: ["MATCHED", "MANUAL"] } },
+      })
+    )
   })
 })

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@workspace/db"
+import { prisma, Prisma, MatchStatus } from "@workspace/db"
 import { requireAdmin } from "@/lib/access-control"
 import { paginationSchema, reconciliationListResponseSchema } from "./dto/reconciliation.dto"
 
@@ -17,8 +17,8 @@ export async function GET(req: Request) {
 
   const { page, limit } = parsed.data
 
-  const whereClause = {
-    matchStatus: { not: "MATCHED" as const },
+  const whereClause: Prisma.InboundTransferWhereInput = {
+    matchStatus: { notIn: [MatchStatus.MATCHED, MatchStatus.MANUAL] },
   }
 
   const [transfers, total] = await Promise.all([
