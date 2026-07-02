@@ -63,7 +63,13 @@ export async function releaseWebhookEvent(
   }
 }
 
-// Payout distributed lock — returns true if lock acquired (safe to proceed)
+// Payout distributed lock — returns true if lock acquired (safe to proceed).
+// Intentionally does NOT degrade gracefully like claimWebhookEvent: if Redis is
+// unavailable this throws and the payout is blocked (fail-closed). For money
+// movement, refusing to pay under uncertainty is the safe default. Double-pay is
+// still prevented by the durable guards even without this lock (Payout.cycleId
+// @unique + the in-transaction READY_TO_PAYOUT re-check); the lock only throttles
+// concurrent initiations for the same cycle.
 export async function acquirePayoutLock(cycleId: string): Promise<boolean> {
   const result = await redis.set(
     `payout:lock:${cycleId}`,
