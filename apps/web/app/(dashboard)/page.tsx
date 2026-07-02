@@ -11,6 +11,7 @@ import { Button } from "@workspace/ui/components/button"
 import { PostHogIdentify } from "@/components/posthog-identify"
 import { DashboardHeader, PageHeading, PageContent } from "./components/dashboard-header"
 import { DashboardOverview } from "@/features/circles/components/dashboard-overview"
+import { RecentActivity } from "@/features/notifications/components/recent-activity"
 
 export default async function DashboardPage() {
   const session = await requireSession()
@@ -64,6 +65,8 @@ export default async function DashboardPage() {
         <OnboardingBanner status={onboardingStatus} userEmail={user.email} hasCircles={hasCircles} />
 
         <DashboardOverview />
+
+        <RecentActivity />
       </PageContent>
     </div>
   )
