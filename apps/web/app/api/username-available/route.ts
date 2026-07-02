@@ -1,4 +1,4 @@
-import { apiSuccess, apiError } from "@/lib/api/response";
+import { apiSuccess } from "@/lib/api/response";
 import { prisma } from "@workspace/db"
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,}$/

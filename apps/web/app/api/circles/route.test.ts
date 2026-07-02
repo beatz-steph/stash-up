@@ -91,8 +91,7 @@ describe("/api/circles", () => {
   describe("GET", () => {
     it("returns 401 if unauthenticated", async () => {
       vi.mocked(getSession).mockResolvedValue(null);
-      const req = new NextRequest("http://localhost/api/circles", { method: "GET" });
-      const res = await GET(req);
+      const res = await GET();
       expect(res.status).toBe(401);
     });
 
@@ -114,8 +113,7 @@ describe("/api/circles", () => {
           _count: { memberships: 1 },
         } as never,
       ]);
-      const req = new NextRequest("http://localhost/api/circles", { method: "GET" });
-      const res = await GET(req);
+      const res = await GET();
       expect(res.status).toBe(200);
       const { data } = await res.json();
       expect(data).toHaveLength(1);

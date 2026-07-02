@@ -11,7 +11,7 @@ export default function NotFound() {
       <div className="space-y-2 max-w-md">
         <h1 className="font-su-display text-su-title-lg font-bold text-su-ink">Page not found</h1>
         <p className="font-su-sans text-su-body-md text-su-muted">
-          We couldn't find the page you were looking for. It might have been moved or doesn't exist.
+          We couldn&apos;t find the page you were looking for. It might have been moved or doesn&apos;t exist.
         </p>
       </div>
       <Button asChild size="lg" variant="outline">

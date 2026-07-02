@@ -78,7 +78,7 @@ export function InviteMemberDialog({ circleId }: { circleId: string }) {
         <DialogHeader>
           <DialogTitle className="font-su-display tracking-tight">Invite a member</DialogTitle>
           <DialogDescription>
-            Enter the username of the person you want to invite. They'll get a
+            Enter the username of the person you want to invite. They&apos;ll get a
             notification and the invite expires in 7 days.
           </DialogDescription>
         </DialogHeader>

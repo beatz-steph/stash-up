@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   let payload: NombaWebhookPayload;
   try {
     payload = JSON.parse(rawBody);
-  } catch (err) {
+  } catch {
     // Malformed JSON is not retriable. Return 200 to stop retry.
     return apiSuccess({ received: true }, 200);
   }

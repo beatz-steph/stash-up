@@ -41,7 +41,7 @@ describe("POST /api/webhooks/nomba", () => {
       processed: false,
       signatureValid: true,
     } as unknown as WebhookReceipt);
-    vi.mocked(prisma.webhookReceipt.update).mockResolvedValue({} as any);
+    vi.mocked(prisma.webhookReceipt.update).mockResolvedValue({} as never);
     // Default: dispatch succeeds. Reset here because clearAllMocks() does not
     // reset implementations, so a mockRejectedValue in one test would leak.
     vi.mocked(dispatchWebhookEvent).mockResolvedValue(undefined);
@@ -87,7 +87,7 @@ describe("POST /api/webhooks/nomba", () => {
 
   it("returns 200 on DB P2002 if processed: true (already processed)", async () => {
     vi.mocked(prisma.webhookReceipt.create).mockRejectedValue({ code: "P2002" });
-    vi.mocked(prisma.webhookReceipt.findUnique).mockResolvedValue({ processed: true } as any);
+    vi.mocked(prisma.webhookReceipt.findUnique).mockResolvedValue({ processed: true } as never);
     
     const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
     const res = await POST(req);
@@ -102,7 +102,7 @@ describe("POST /api/webhooks/nomba", () => {
       id: "receipt-existing",
       processed: false,
       signatureValid: true,
-    } as any);
+    } as never);
     
     const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
     const res = await POST(req);

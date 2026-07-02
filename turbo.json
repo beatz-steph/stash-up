@@ -1,6 +1,24 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+    "ADMIN_BETTER_AUTH_SECRET",
+    "ADMIN_BETTER_AUTH_URL",
+    "NOMBA_CLIENT_ID",
+    "NOMBA_CLIENT_SECRET",
+    "NOMBA_ACCOUNT_ID",
+    "NOMBA_SUB_ACCOUNT_ID",
+    "NOMBA_SIGNATURE_KEY",
+    "NOMBA_BASE_URL",
+    "REDIS_URL",
+    "RESEND_API_KEY",
+    "RESEND_FROM_EMAIL",
+    "CRON_SECRET"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

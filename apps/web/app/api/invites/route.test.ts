@@ -3,7 +3,6 @@ import { GET } from "./route";
 import { prisma } from "@workspace/db";
 import { getSession } from "@/lib/session";
 import { createMockSession } from "@test/mocks/auth";
-import { NextRequest } from "next/server";
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 
@@ -22,8 +21,7 @@ describe("/api/invites", () => {
 
   it("returns 401 if unauthenticated", async () => {
     vi.mocked(getSession).mockResolvedValue(null);
-    const req = new NextRequest("http://localhost/api/invites", { method: "GET" });
-    const res = await GET(req);
+    const res = await GET();
     expect(res.status).toBe(401);
   });
 
@@ -39,8 +37,7 @@ describe("/api/invites", () => {
       },
     ] as never);
     
-    const req = new NextRequest("http://localhost/api/invites", { method: "GET" });
-    const res = await GET(req);
+    const res = await GET();
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data).toHaveLength(1);

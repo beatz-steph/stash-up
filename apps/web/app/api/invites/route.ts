@@ -4,7 +4,7 @@ import type { InviteRes } from "../circles/dto/circles.dto";
 
 import { prisma } from "@workspace/db";
 
-export async function GET(req: Request) {
+export async function GET() {
   const session = await getSession();
   if (!session?.user) {
     return apiError("Unauthorized", 401);

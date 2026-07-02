@@ -1,5 +1,4 @@
 import { requireSession } from "@/lib/session"
-import { redirect } from "next/navigation"
 
 import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
 import { serverApiOptions } from "@/lib/api/server"

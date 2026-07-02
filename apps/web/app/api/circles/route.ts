@@ -66,7 +66,7 @@ export async function POST(req: Request) {
   return apiSuccess<CreateCircleRes>({ id: circle.id }, 201);
 }
 
-export async function GET(req: Request) {
+export async function GET() {
   const session = await getSession();
 
   if (!session?.user) {

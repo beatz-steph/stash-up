@@ -63,7 +63,7 @@ export function IncomingInvitesList() {
           No pending invites
         </p>
         <p className="font-su-sans text-su-caption text-su-muted">
-          When someone invites you to a circle, it'll show up here.
+          When someone invites you to a circle, it&apos;ll show up here.
         </p>
       </div>
     )

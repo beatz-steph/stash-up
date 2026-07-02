@@ -65,8 +65,8 @@ describe("GET /api/cron/cycle-sweep", () => {
       ]
     };
 
-    vi.mocked(prisma.cycle.findMany).mockResolvedValue([mockCycle as any]);
-    vi.mocked(prisma.cycle.findUnique).mockResolvedValue(mockCycle as any);
+    vi.mocked(prisma.cycle.findMany).mockResolvedValue([mockCycle as never]);
+    vi.mocked(prisma.cycle.findUnique).mockResolvedValue(mockCycle as never);
 
     const req = createRequest("Bearer secret");
     const res = await GET(req);
@@ -110,9 +110,9 @@ describe("GET /api/cron/cycle-sweep", () => {
   it("is idempotent: skips cycle if status flipped during tx race", async () => {
     const mockCycle = { id: "cy-1", status: "OPEN" };
     
-    vi.mocked(prisma.cycle.findMany).mockResolvedValue([mockCycle as any]);
+    vi.mocked(prisma.cycle.findMany).mockResolvedValue([mockCycle as never]);
     // The re-check returns READY_TO_PAYOUT (e.g. concurrent completion)
-    vi.mocked(prisma.cycle.findUnique).mockResolvedValue({ id: "cy-1", status: "READY_TO_PAYOUT" } as any);
+    vi.mocked(prisma.cycle.findUnique).mockResolvedValue({ id: "cy-1", status: "READY_TO_PAYOUT" } as never);
 
     const req = createRequest("Bearer secret");
     const res = await GET(req);

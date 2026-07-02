@@ -29,7 +29,7 @@ export function WithdrawalAccountModal({
         <DialogHeader>
           <DialogTitle>Set up your withdrawal account</DialogTitle>
           <DialogDescription>
-            Where should we send your payouts when it's your turn to collect?
+            Where should we send your payouts when it&apos;s your turn to collect?
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">

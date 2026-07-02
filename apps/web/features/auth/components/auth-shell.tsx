@@ -1,4 +1,5 @@
 import * as React from "react"
+import Image from "next/image"
 
 interface AuthShellProps {
   /** Page heading, e.g. "Welcome back". */
@@ -19,7 +20,7 @@ interface AuthShellProps {
 export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
   return (
     <div className="w-full">
-      <img src="/logo.svg" alt="StashUp Logo" className="h-16 w-16 mx-auto block mb-10" />
+      <Image src="/logo.svg" alt="StashUp Logo" width={64} height={64} className="h-16 w-16 mx-auto block mb-10" />
 
       <div className="space-y-2 mb-8 text-center">
         <h1 className="font-su-display text-su-display-sm font-bold text-su-ink leading-[1.1]">

@@ -1,5 +1,4 @@
 import { requireSession } from "@/lib/session"
-import { redirect } from "next/navigation"
 import Link from "next/link"
 import { Plus } from "lucide-react"
 
