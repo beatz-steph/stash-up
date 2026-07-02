@@ -2,6 +2,8 @@ import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
 import { prisma } from "@workspace/db";
 import { requireOnboardingComplete } from "@/lib/access-control";
+import { captureServer } from "@/lib/analytics/server";
+import { AnalyticsEvent } from "@/lib/analytics/events";
 import { validateRequestBody } from "@/lib/api/validate";
 import { CreateCircleReqSchema, type CreateCircleRes, type CircleSummaryRes } from "./dto/circles.dto";
 
@@ -58,6 +60,8 @@ export async function POST(req: Request) {
       },
     });
   });
+
+  await captureServer(session.user.id, AnalyticsEvent.CircleCreated, { circleId: circle.id });
 
   return apiSuccess<CreateCircleRes>({ id: circle.id }, 201);
 }

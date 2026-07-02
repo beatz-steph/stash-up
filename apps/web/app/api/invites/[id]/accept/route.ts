@@ -4,6 +4,8 @@ import { getSession } from "@/lib/session"
 import { prisma } from "@workspace/db";
 import { requireOnboardingComplete } from "@/lib/access-control";
 import { Prisma } from "@workspace/db";
+import { captureServer } from "@/lib/analytics/server";
+import { AnalyticsEvent } from "@/lib/analytics/events";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -89,6 +91,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       return newMembership;
     });
+
+    await captureServer(session.user.id, AnalyticsEvent.CircleJoined, { circleId: circle.id });
 
     return apiSuccess({ membership });
   } catch (error) {

@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "@workspace/ui/components/sonner"
 import { authClient } from "../../../../lib/auth-client"
 import { useUsernameAvailability } from "../../queries/use-username-availability"
-import { track, identifyUser } from "@/lib/analytics/client"
-import { AnalyticsEvent } from "@/lib/analytics/events"
+import { identifyUser } from "@/lib/analytics/client"
 
 export const signUpSchema = z
   .object({
@@ -92,8 +91,9 @@ export function useSignUpForm() {
         setIsLoading(false)
         return
       }
+      // signup_completed is captured server-side in the BetterAuth user.create hook.
+      // Identify here so the anonymous session links to the new user id.
       if (data?.user?.id) identifyUser(data.user.id)
-      track(AnalyticsEvent.SignupCompleted)
       toast.success("Account created — welcome to StashUp!")
       router.push("/")
       router.refresh()

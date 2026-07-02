@@ -7,5 +7,6 @@ if (key && isAnalyticsEnabled()) {
   posthog.init(key, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
     defaults: "2026-05-30",
+    person_profiles: "identified_only",
   })
 }
