@@ -69,6 +69,39 @@ describe("/api/invites/[id]/accept", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 if email is not verified", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1", emailVerified: false }));
+    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
+      id: "inv-1",
+      invitedUserId: "user-1",
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 10000),
+    } as never);
+    
+    const req = new NextRequest("http://localhost", { method: "POST" });
+    const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toContain("verify your email");
+  });
+
+  it("returns 403 if withdrawal account is missing", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1", emailVerified: true }));
+    vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
+      id: "inv-1",
+      invitedUserId: "user-1",
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 10000),
+    } as never);
+    vi.mocked(prisma.withdrawalAccount.findUnique).mockResolvedValue(null);
+    
+    const req = new NextRequest("http://localhost", { method: "POST" });
+    const res = await POST(req, { params: Promise.resolve({ id: "inv-1" }) });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toContain("withdrawal account");
+  });
+
   it("returns 403 if user blocked from circles", async () => {
     vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }));
     vi.mocked(prisma.circleInvite.findUnique).mockResolvedValue({
