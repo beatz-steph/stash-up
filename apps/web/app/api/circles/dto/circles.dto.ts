@@ -29,6 +29,7 @@ export const CircleSummaryResSchema = z.object({
 });
 
 export const MemberDetailSchema = z.object({
+  id: z.string(),
   user: z.object({
     id: z.string(),
     name: z.string(),
@@ -53,6 +54,22 @@ export const InviteDetailSchema = z.object({
   expiresAt: z.date().or(z.string()),
 });
 
+export const CycleDetailSchema = z.object({
+  id: z.string(),
+  sequence: z.number().int(),
+  status: z.string(),
+  potExpectedMinor: z.number().int(),
+  potCollectedMinor: z.number().int(),
+  deadline: z.date().or(z.string()),
+  recipientMembershipId: z.string(),
+});
+
+export const ContributionDetailSchema = z.object({
+  membershipId: z.string(),
+  amountMinor: z.number().int(),
+  status: z.string(),
+});
+
 export const CircleDetailResSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -65,6 +82,8 @@ export const CircleDetailResSchema = z.object({
   createdAt: z.date().or(z.string()),
   members: z.array(MemberDetailSchema),
   invites: z.array(InviteDetailSchema),
+  currentCycle: CycleDetailSchema.nullable().optional(),
+  contributions: z.array(ContributionDetailSchema).optional(),
 });
 
 export const InviteResSchema = z.object({

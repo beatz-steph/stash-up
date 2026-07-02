@@ -51,12 +51,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           },
         },
       },
+      cycles: true, // We will filter this in memory since Prisma doesn't support where sequence = currentCycleSeq directly inside include easily without multiple queries, or we can just fetch the current cycle. Let's fetch it separately for simplicity if needed, or include all and filter.
     },
   });
 
   if (!circle) {
     return apiError("Circle not found", 404);
   }
+
+  // Fetch current cycle and contributions
+  const currentCycle = await prisma.cycle.findUnique({
+    where: {
+      circleId_sequence: {
+        circleId: circle.id,
+        sequence: circle.currentCycleSeq || 1, // fallback to 1 if 0
+      },
+    },
+    include: {
+      contributions: true,
+    },
+  });
 
   const response = {
     id: circle.id,
@@ -69,6 +83,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     startDeadline: circle.startDeadline,
     createdAt: circle.createdAt,
     members: circle.memberships.map((m) => ({
+      id: m.id,
       user: m.user,
       role: m.role,
       payoutPosition: m.payoutPosition,
@@ -81,6 +96,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       status: i.status,
       expiresAt: i.expiresAt,
     })),
+    currentCycle: currentCycle
+      ? {
+          id: currentCycle.id,
+          sequence: currentCycle.sequence,
+          status: currentCycle.status,
+          potExpectedMinor: currentCycle.potExpectedMinor,
+          potCollectedMinor: currentCycle.potCollectedMinor,
+          deadline: currentCycle.deadline,
+          recipientMembershipId: currentCycle.recipientMembershipId,
+        }
+      : null,
+    contributions: currentCycle
+      ? currentCycle.contributions.map((c) => ({
+          membershipId: c.membershipId,
+          amountMinor: c.amountMinor,
+          status: c.status,
+        }))
+      : [],
   };
 
   return apiSuccess<CircleDetailRes>(response);

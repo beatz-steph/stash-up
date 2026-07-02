@@ -206,12 +206,23 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                     <TableHead className="w-16">Slot</TableHead>
                     <TableHead>Member</TableHead>
                     <TableHead>Role</TableHead>
+                    {!isForming && <TableHead>Contribution</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {circle.members.map((member) => (
-                    <TableRow key={member.user.id}>
-                      <TableCell className="font-su-mono font-medium text-su-ink [font-feature-settings:'tnum']">
+                  {circle.members.map((member) => {
+                    const contribution = circle.contributions?.find(c => c.membershipId === member.id);
+                    const contribStatus = contribution?.status || "PENDING";
+                    const statusColor = {
+                      PENDING: "bg-su-accent-yellow/10 text-su-accent-yellow",
+                      PARTIAL: "bg-su-accent-yellow/10 text-su-accent-yellow",
+                      COMPLETE: "bg-su-semantic-up/10 text-su-semantic-up",
+                      DEFAULTED: "bg-su-semantic-down/10 text-su-semantic-down"
+                    }[contribStatus] || "bg-su-muted/10 text-su-muted";
+
+                    return (
+                      <TableRow key={member.user.id}>
+                        <TableCell className="font-su-mono font-medium text-su-ink [font-feature-settings:'tnum']">
                         {member.payoutPosition}
                       </TableCell>
                       <TableCell>
@@ -236,8 +247,16 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                           {member.role}
                         </Badge>
                       </TableCell>
+                      {!isForming && (
+                        <TableCell>
+                          <Badge className={`rounded-su-pill ${statusColor}`}>
+                            {contribStatus}
+                          </Badge>
+                        </TableCell>
+                      )}
                     </TableRow>
-                  ))}
+                  );
+                })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -327,6 +346,27 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 </div>
                 <Progress value={pct} className="h-2" />
               </div>
+
+              {circle.currentCycle && (
+                <div className="border-t border-su-hairline-soft pt-5 space-y-4">
+                  <h3 className="font-su-sans text-su-caption-sm font-semibold text-su-ink uppercase tracking-wider">
+                    Cycle {circle.currentCycle.sequence} Progress
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between font-su-sans text-su-caption text-su-muted">
+                      <span>Pot Collected</span>
+                      <span className="font-su-mono text-su-ink [font-feature-settings:'tnum']">
+                        {formatNaira(circle.currentCycle.potCollectedMinor)} / {formatNaira(circle.currentCycle.potExpectedMinor)}
+                      </span>
+                    </div>
+                    <Progress value={Math.round((circle.currentCycle.potCollectedMinor / circle.currentCycle.potExpectedMinor) * 100)} className="h-2" />
+                    <div className="flex justify-between font-su-sans text-su-caption text-su-muted pt-1">
+                      <span>Status: {circle.currentCycle.status}</span>
+                      <span>Due: {new Date(circle.currentCycle.deadline).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {isCreator && isForming && activeMembersCount < circle.totalSlots && (
                 <div className="border-t border-su-hairline-soft pt-5">

@@ -12,6 +12,7 @@ vi.mock("@workspace/db", () => {
     prisma: {
       membership: { findUnique: vi.fn() },
       circle: { findUnique: vi.fn() },
+      cycle: { findUnique: vi.fn() },
     },
   };
 });
@@ -79,6 +80,16 @@ describe("/api/circles/[id]", () => {
           expiresAt: new Date(),
           invitedUser: { id: "user-2", name: "User 2", username: "user2", image: null }
         }]
+      } as never);
+      vi.mocked(prisma.cycle.findUnique).mockResolvedValue({
+        id: "cycle-1",
+        sequence: 1,
+        status: "OPEN",
+        potExpectedMinor: 5000,
+        potCollectedMinor: 0,
+        deadline: new Date(),
+        recipientMembershipId: "mem-1",
+        contributions: [],
       } as never);
       
       const req = new NextRequest("http://localhost/api/circles/circle-1", { method: "GET" });
