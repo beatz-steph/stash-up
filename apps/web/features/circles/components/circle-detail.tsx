@@ -92,6 +92,13 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const hasFailedProvisioning = circle.members.some(m => m.vaProvisionStatus === "FAILED")
   const isFullAndActive = activeMembersCount === circle.totalSlots
 
+  // The requesting member's funding position this cycle.
+  const myContributionMinor =
+    circle.contributions?.find((c) => c.membershipId === myMembership?.id)?.amountMinor ?? 0
+  const myAmountDueMinor = Math.max(0, circle.contributionMinor - myContributionMinor)
+  const myBufferMinor = circle.myBufferMinor ?? 0
+  const isPaidUpThisCycle = myAmountDueMinor === 0
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -200,28 +207,73 @@ export function CircleDetail({ circleId }: { circleId: string }) {
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle className="font-su-sans text-su-title-sm">Fund your circle</CardTitle>
-                  <Badge className="rounded-su-pill bg-su-primary/10 text-su-primary">
-                    {formatNaira(circle.contributionMinor)} due
-                  </Badge>
+                  {isPaidUpThisCycle ? (
+                    <Badge className="rounded-su-pill bg-su-semantic-up/10 text-su-semantic-up">
+                      Paid up this cycle
+                    </Badge>
+                  ) : (
+                    <Badge className="rounded-su-pill bg-su-primary/10 text-su-primary">
+                      {formatNaira(myAmountDueMinor)} due
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="font-su-sans text-su-caption text-su-muted">
-                  Transfer your contribution to this dedicated account — it&apos;s matched to your
-                  circle automatically.
-                </p>
-
-                {(circle.myBufferMinor ?? 0) > 0 && (
-                  <div className="rounded-su-lg border border-su-semantic-up/20 bg-su-semantic-up/5 px-4 py-3">
-                    <p className="font-su-sans text-su-caption text-su-ink">
-                      You have{" "}
-                      <span className="font-su-mono font-semibold text-su-semantic-up [font-feature-settings:'tnum']">
-                        {formatNaira(circle.myBufferMinor ?? 0)}
-                      </span>{" "}
-                      in carried-over credit — it&apos;s automatically applied to your next
-                      contribution.
+                {/* Per-member breakdown so it's clear what's paid, owed, and held as credit. */}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-su-lg border border-su-hairline bg-su-surface p-3">
+                    <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                      Contributed
+                    </span>
+                    <p className="mt-1 font-su-mono text-su-body-sm font-semibold text-su-ink [font-feature-settings:'tnum']">
+                      {formatNaira(myContributionMinor)}
+                      <span className="font-su-sans text-su-caption-sm font-normal text-su-muted">
+                        {" "}
+                        / {formatNaira(circle.contributionMinor)}
+                      </span>
                     </p>
                   </div>
+                  <div className="rounded-su-lg border border-su-hairline bg-su-surface p-3">
+                    <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                      Still due
+                    </span>
+                    <p
+                      className={`mt-1 font-su-mono text-su-body-sm font-semibold [font-feature-settings:'tnum'] ${
+                        isPaidUpThisCycle ? "text-su-semantic-up" : "text-su-ink"
+                      }`}
+                    >
+                      {formatNaira(myAmountDueMinor)}
+                    </p>
+                  </div>
+                  <div className="col-span-2 rounded-su-lg border border-su-hairline bg-su-surface p-3 sm:col-span-1">
+                    <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                      Your credit
+                    </span>
+                    <p
+                      className={`mt-1 font-su-mono text-su-body-sm font-semibold [font-feature-settings:'tnum'] ${
+                        myBufferMinor > 0 ? "text-su-semantic-up" : "text-su-ink"
+                      }`}
+                    >
+                      {formatNaira(myBufferMinor)}
+                    </p>
+                  </div>
+                </div>
+
+                {myBufferMinor > 0 ? (
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    Your{" "}
+                    <span className="font-su-mono text-su-semantic-up [font-feature-settings:'tnum']">
+                      {formatNaira(myBufferMinor)}
+                    </span>{" "}
+                    credit (from a previous overpayment) is automatically applied to your next
+                    contribution — you don&apos;t need to transfer it again.
+                  </p>
+                ) : (
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    {isPaidUpThisCycle
+                      ? "You're all paid up for this cycle. Anything extra you send is saved as credit for the next one."
+                      : "Transfer the amount still due to this dedicated account — it's matched to your circle automatically."}
+                  </p>
                 )}
                 <div className="rounded-su-lg border border-su-hairline bg-su-surface p-5">
                   <div className="flex items-start justify-between gap-4">
