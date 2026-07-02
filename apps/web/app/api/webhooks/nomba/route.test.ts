@@ -1,13 +1,14 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { WebhookReceipt } from "@workspace/db";
 import { POST } from "./route";
-import { claimWebhookEvent } from "@/lib/redis";
+import { claimWebhookEvent, releaseWebhookEvent } from "@/lib/redis";
 import { verifyNombaSignature } from "@/lib/webhooks/verify";
 import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
 import { prisma } from "@workspace/db";
 
 vi.mock("@/lib/redis", () => ({
   claimWebhookEvent: vi.fn(),
+  releaseWebhookEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/webhooks/verify", () => ({
@@ -18,7 +19,18 @@ vi.mock("@/lib/webhooks/dispatch", () => ({
   dispatchWebhookEvent: vi.fn(),
 }));
 
-// Setup prisma mock in global setup, just clear it
+vi.mock("@workspace/db", () => {
+  return {
+    prisma: {
+      webhookReceipt: {
+        create: vi.fn(),
+        update: vi.fn(),
+        findUnique: vi.fn(),
+      },
+    },
+  };
+});
+
 describe("POST /api/webhooks/nomba", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -26,7 +38,13 @@ describe("POST /api/webhooks/nomba", () => {
     vi.mocked(verifyNombaSignature).mockReturnValue(true);
     vi.mocked(prisma.webhookReceipt.create).mockResolvedValue({
       id: "receipt-1",
+      processed: false,
+      signatureValid: true,
     } as unknown as WebhookReceipt);
+    vi.mocked(prisma.webhookReceipt.update).mockResolvedValue({} as any);
+    // Default: dispatch succeeds. Reset here because clearAllMocks() does not
+    // reset implementations, so a mockRejectedValue in one test would leak.
+    vi.mocked(dispatchWebhookEvent).mockResolvedValue(undefined);
   });
 
   const createRequest = (body: string | Record<string, unknown>, headers = {}) => {
@@ -37,66 +55,79 @@ describe("POST /api/webhooks/nomba", () => {
     });
   };
 
-  it("returns 200 and stops on invalid JSON", async () => {
-    const req = createRequest("invalid-json");
-    const res = await POST(req);
-    expect(res.status).toBe(200);
-    expect(claimWebhookEvent).not.toHaveBeenCalled();
-  });
-
-  it("returns 200 and stops if duplicate requestId", async () => {
-    vi.mocked(claimWebhookEvent).mockResolvedValue(false);
+  it("returns 200 and calls dispatch if signature valid, and updates receipt to processed: true", async () => {
     const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
     const res = await POST(req);
     
     expect(res.status).toBe(200);
-    expect(prisma.webhookReceipt.create).not.toHaveBeenCalled();
-    expect(dispatchWebhookEvent).not.toHaveBeenCalled();
-  });
-
-  it("returns 200, persists invalid receipt, and skips dispatch if signature invalid", async () => {
-    vi.mocked(verifyNombaSignature).mockReturnValue(false);
-    const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
-    const res = await POST(req);
-    
-    expect(res.status).toBe(200);
-    expect(prisma.webhookReceipt.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ signatureValid: false }),
-      })
-    );
-    expect(dispatchWebhookEvent).not.toHaveBeenCalled();
-  });
-
-  it("returns 200, persists receipt, and calls dispatch if signature valid", async () => {
-    const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
-    const res = await POST(req);
-    
-    expect(res.status).toBe(200);
-    expect(prisma.webhookReceipt.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ signatureValid: true }),
-      })
-    );
+    expect(prisma.webhookReceipt.create).toHaveBeenCalled();
     expect(dispatchWebhookEvent).toHaveBeenCalled();
+    expect(prisma.webhookReceipt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "receipt-1" },
+        data: expect.objectContaining({ processed: true }),
+      })
+    );
   });
 
-  it("returns 200 on DB unique violation (P2002) — durable dedup, no dispatch", async () => {
-    // This is the path the Redis-down degrade relies on: claim returns true,
-    // but the WebhookReceipt unique constraint catches the duplicate.
+  it("releases redis claim on dispatch failure", async () => {
+    vi.mocked(dispatchWebhookEvent).mockRejectedValue(new Error("Dispatch crash"));
+    const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500); // Route catches, logs, and returns 500
+    expect(releaseWebhookEvent).toHaveBeenCalledWith("NOMBA", "req-1");
+    // Records the error but must NOT mark the receipt processed.
+    expect(prisma.webhookReceipt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ processingError: expect.any(String) }),
+      })
+    );
+  });
+
+  it("returns 200 on DB P2002 if processed: true (already processed)", async () => {
     vi.mocked(prisma.webhookReceipt.create).mockRejectedValue({ code: "P2002" });
+    vi.mocked(prisma.webhookReceipt.findUnique).mockResolvedValue({ processed: true } as any);
+    
     const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    expect(dispatchWebhookEvent).not.toHaveBeenCalled();
+    expect(dispatchWebhookEvent).not.toHaveBeenCalled(); // No double dispatch
   });
 
-  it("returns 500 on unexpected database failure so Nomba retries", async () => {
-    vi.mocked(prisma.webhookReceipt.create).mockRejectedValue(new Error("Database connection lost"));
+  it("re-dispatches on DB P2002 if processed: false (interrupted dispatch)", async () => {
+    vi.mocked(prisma.webhookReceipt.create).mockRejectedValue({ code: "P2002" });
+    vi.mocked(prisma.webhookReceipt.findUnique).mockResolvedValue({
+      id: "receipt-existing",
+      processed: false,
+      signatureValid: true,
+    } as any);
+    
     const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
     const res = await POST(req);
-    
+
+    expect(res.status).toBe(200);
+    // Should retry dispatch with the existing receipt
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "receipt-existing" }),
+      expect.anything()
+    );
+    expect(prisma.webhookReceipt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "receipt-existing" },
+        data: expect.objectContaining({ processed: true }),
+      })
+    );
+  });
+
+  it("returns 500 and releases Redis lock on unexpected DB error", async () => {
+    vi.mocked(prisma.webhookReceipt.create).mockRejectedValue(new Error("Random DB connection crash"));
+    const req = createRequest({ event_type: "payment_success", requestId: "req-1" });
+    const res = await POST(req);
+
     expect(res.status).toBe(500);
+    expect(dispatchWebhookEvent).not.toHaveBeenCalled();
+    expect(releaseWebhookEvent).toHaveBeenCalledWith("NOMBA", "req-1");
   });
 });

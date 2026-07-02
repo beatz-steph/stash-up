@@ -49,6 +49,20 @@ export async function claimWebhookEvent(
   }
 }
 
+export async function releaseWebhookEvent(
+  provider: string,
+  providerEventId: string
+): Promise<void> {
+  try {
+    await redis.del(`webhook:${provider}:${providerEventId}`);
+  } catch (err) {
+    console.error(
+      "[redis] releaseWebhookEvent failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 // Payout distributed lock — returns true if lock acquired (safe to proceed)
 export async function acquirePayoutLock(cycleId: string): Promise<boolean> {
   const result = await redis.set(

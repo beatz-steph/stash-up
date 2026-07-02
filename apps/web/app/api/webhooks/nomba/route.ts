@@ -1,7 +1,7 @@
 import { apiSuccess, apiError } from "@/lib/api/response";
 import crypto from "crypto";
 import { prisma } from "@workspace/db";
-import { claimWebhookEvent } from "@/lib/redis";
+import { claimWebhookEvent, releaseWebhookEvent } from "@/lib/redis";
 import { verifyNombaSignature, NombaWebhookPayload } from "@/lib/webhooks/verify";
 import { dispatchWebhookEvent } from "@/lib/webhooks/dispatch";
 
@@ -56,25 +56,69 @@ export async function POST(request: Request) {
         payloadHash,
         signatureValid,
         rawPayload: rawBody,
+        processed: false,
       },
     });
-
-    if (!signatureValid) {
-      // Persist receipt but don't dispatch.
-      return apiSuccess({ received: true }, 200);
-    }
-
-    // 5. Dispatch
-    await dispatchWebhookEvent(receipt, payload);
-
   } catch (err) {
     if ((err as { code?: string }).code === "P2002") {
-      // P2002: Unique constraint violation (fallback dedup)
-      return apiSuccess({ received: true }, 200);
+      // P2002: Unique constraint violation (fallback dedup or retry)
+      // Fetch the existing receipt
+      const existingReceipt = await prisma.webhookReceipt.findUnique({
+        where: {
+          provider_providerEventId: {
+            provider: "NOMBA",
+            providerEventId: requestId,
+          },
+        },
+      });
+
+      if (!existingReceipt) {
+        // Race condition, just return 200 and let it retry if necessary
+        return apiSuccess({ received: true }, 200);
+      }
+
+      if (existingReceipt.processed) {
+        // Already successfully processed, return 200
+        return apiSuccess({ received: true }, 200);
+      } else {
+        // Exists but not processed (e.g. previous crash). Re-dispatch.
+        receipt = existingReceipt;
+      }
+    } else {
+      // Other DB error, return 500 so Nomba retries
+      console.error("[Webhook Error] Unexpected failure inserting receipt:", err);
+      await releaseWebhookEvent("NOMBA", requestId);
+      return apiError("Internal Server Error", 500);
     }
-    // For all other errors (e.g. DB unreachable, dispatch crash), we log and return 500
-    // so that Nomba triggers its retry mechanism, preventing permanent data loss.
-    console.error("[Webhook Error] Unexpected failure:", err);
+  }
+
+  if (!receipt.signatureValid) {
+    // Persist receipt but don't dispatch.
+    return apiSuccess({ received: true }, 200);
+  }
+
+  // 5. Dispatch
+  try {
+    await dispatchWebhookEvent(receipt, payload);
+    
+    // Mark processed
+    await prisma.webhookReceipt.update({
+      where: { id: receipt.id },
+      data: {
+        processed: true,
+        processedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("[Webhook Error] Dispatch failure:", err);
+    await prisma.webhookReceipt.update({
+      where: { id: receipt.id },
+      data: {
+        processingError: err instanceof Error ? err.message : String(err),
+      },
+    });
+    // RELEASE the Redis claim so next retry doesn't falsely return 200
+    await releaseWebhookEvent("NOMBA", requestId);
     return apiError("Internal Server Error", 500);
   }
 

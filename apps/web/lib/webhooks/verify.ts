@@ -13,6 +13,14 @@ export interface NombaWebhookPayload {
       type?: string;
       time?: string;
       responseCode?: string;
+      amount?: number | string;
+      aliasAccountReference?: string;
+      currency?: string;
+      senderName?: string;
+      senderBank?: string;
+      senderBankCode?: string;
+      senderAccountNumber?: string;
+      narration?: string;
     };
   };
 }
