@@ -28,6 +28,13 @@ dist
 .DS_Store
 *.pem
 
+# redis dumps (may contain cached Nomba access tokens)
+*.rdb
+
+# local scratch / throwaway probe scripts at repo root (never real tests)
+/test-*.ts
+/test-*.js
+
 # debug
 npm-debug.log*
 yarn-debug.log*
