@@ -87,9 +87,8 @@ export async function dispatchWebhookEvent(
       // 4. DB Transaction
       await prisma.$transaction(async (tx) => {
         // A. Create InboundTransfer
-        let inboundTransfer;
         try {
-          inboundTransfer = await tx.inboundTransfer.create({
+          await tx.inboundTransfer.create({
             data: {
               provider: "NOMBA",
               providerEventId: receipt.providerEventId,
@@ -260,7 +259,9 @@ export async function dispatchWebhookEvent(
           userId: payoutRecipientId,
           type: "GENERIC", // no PAYOUT_FAILED enum; GENERIC avoids mislabelling a failure as "sent"
           title: "Payout Failed",
-          body: `Your circle payout of ${formatNaira(amountMinor)} failed. Reason: ${reason}. Please contact support.`,
+          // Keep the raw provider reason in Payout.failureReason (admin-facing);
+          // the user-facing body stays friendly and free of raw provider codes.
+          body: `Your circle payout of ${formatNaira(amountMinor)} could not be completed. Our team is looking into it — please contact support if you need help.`,
         });
       }
       break;

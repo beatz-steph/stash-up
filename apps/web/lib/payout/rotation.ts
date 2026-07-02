@@ -48,6 +48,15 @@ export async function advanceRotation(
     return;
   }
 
+  // NOTE: the create below is intentionally NOT wrapped in a try/catch-P2002.
+  // This runs inside the caller's interactive $transaction (see dispatch.ts
+  // payout_success), which also marks the Payout SUCCESS and the Cycle PAID_OUT.
+  // A P2002 here means a truly concurrent redelivery raced past the upstream
+  // `payout.status === "SUCCESS"` guard. Letting it propagate rolls the whole
+  // transaction back and returns non-200, so Nomba retries and the pre-check
+  // above then short-circuits cleanly. Catching-and-returning instead would let
+  // Prisma COMMIT an already-aborted Postgres transaction (a silent rollback of
+  // the SUCCESS/PAID_OUT writes with no error surfaced) — do NOT add one.
   await tx.cycle.create({
     data: {
       circleId: circle.id,

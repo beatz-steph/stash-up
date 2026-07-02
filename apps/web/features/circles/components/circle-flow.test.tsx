@@ -117,7 +117,10 @@ describe("Circle Frontend Flow", () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/circles/circle-new")
     })
-  })
+    // Longer timeout: this test drives many sequential userEvent interactions
+    // (3 fields + calendar open/navigate/select + submit) which can exceed the
+    // default 5s under full-suite jsdom load, causing intermittent CI flakes.
+  }, 15000)
 
   it("validates CreateCircleForm negative values", async () => {
     const user = userEvent.setup()

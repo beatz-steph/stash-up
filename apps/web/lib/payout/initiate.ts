@@ -9,12 +9,11 @@ export async function initiatePayout(cycleId: string): Promise<void> {
   }
 
   try {
-    // ── CLAIM TX ──
-    let amountMinor = 0;
     const merchantTxRef = `payout_${cycleId}`; // Sprint 5 one-shot ref
-    let wa: { accountNumber: string; bankCode: string; bankName: string; accountName: string };
 
-    await prisma.$transaction(async (tx) => {
+    // ── CLAIM TX ── returns the values the Nomba call needs, so nothing is read
+    // through a non-null assertion on an outer `let` after the transaction.
+    const { amountMinor, wa } = await prisma.$transaction(async (tx) => {
       const cycle = await tx.cycle.findUnique({
         where: { id: cycleId },
         include: { recipientMembership: true },
@@ -33,20 +32,17 @@ export async function initiatePayout(cycleId: string): Promise<void> {
         throw new Error("Recipient has no withdrawal account");
       }
 
-      amountMinor = cycle.potExpectedMinor;
-      wa = withdrawalAccount;
-
       try {
         await tx.payout.create({
           data: {
             cycleId,
             recipientMembershipId: cycle.recipientMembershipId,
-            amountMinor,
+            amountMinor: cycle.potExpectedMinor,
             merchantTxRef,
-            recipientAccountNumber: wa.accountNumber,
-            recipientBankCode: wa.bankCode,
-            recipientBankName: wa.bankName,
-            recipientAccountName: wa.accountName,
+            recipientAccountNumber: withdrawalAccount.accountNumber,
+            recipientBankCode: withdrawalAccount.bankCode,
+            recipientBankName: withdrawalAccount.bankName,
+            recipientAccountName: withdrawalAccount.accountName,
             status: "INITIATED",
           },
         });
@@ -61,6 +57,8 @@ export async function initiatePayout(cycleId: string): Promise<void> {
         where: { id: cycleId },
         data: { status: "PAYOUT_INITIATED" },
       });
+
+      return { amountMinor: cycle.potExpectedMinor, wa: withdrawalAccount };
     });
 
     // ── NOMBA CALL (OUTSIDE any tx) ──
@@ -71,9 +69,9 @@ export async function initiatePayout(cycleId: string): Promise<void> {
     try {
       const res = await initiateSubAccountBankTransfer({
         amount: amountMinor / 100, // naira
-        accountNumber: wa!.accountNumber,
-        accountName: wa!.accountName,
-        bankCode: wa!.bankCode,
+        accountNumber: wa.accountNumber,
+        accountName: wa.accountName,
+        bankCode: wa.bankCode,
         merchantTxRef,
         narration: `StashUp payout`,
       });
