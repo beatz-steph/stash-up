@@ -13,8 +13,17 @@ export const SaveWithdrawalAccountReqSchema = z.object({
   bankName: z.string().min(1, "Bank name is required"),
   accountNumber: z.string().regex(/^\d{10}$/, "Account number must be exactly 10 digits"),
   accountName: z.string().min(1, "Account name is required"),
+  // Required only when CHANGING an existing account (enforced server-side);
+  // ignored on first-time linking.
+  otp: z.string().regex(/^\d{6}$/, "Enter the 6-digit code").optional(),
 })
 export type SaveWithdrawalAccountReq = z.infer<typeof SaveWithdrawalAccountReqSchema>
+
+export const WithdrawalOtpResSchema = z.object({
+  sent: z.boolean(),
+  expiresInMinutes: z.number(),
+})
+export type WithdrawalOtpRes = z.infer<typeof WithdrawalOtpResSchema>
 
 export const ResolveAccountReqSchema = z.object({
   bankCode: z.string().min(1, "Bank selection is required"),
