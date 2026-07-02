@@ -89,7 +89,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     type: "CIRCLE_INVITE",
     title: "New Circle Invite",
     body: `You have been invited to join ${circle.name}`,
-    link: `/circles/invites`,
+    link: `/invites`,
   });
 
   return apiSuccess<CreateInviteRes>(
