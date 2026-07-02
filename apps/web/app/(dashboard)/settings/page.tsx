@@ -4,6 +4,7 @@ import { fetchWithdrawalAccount } from "@/lib/api/data/withdrawal-account"
 import { serverApiOptions } from "@/lib/api/server"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
 import { DashboardHeader, PageHeading, PageContent } from "../components/dashboard-header"
+import { UpdateWithdrawalAccountDialog } from "@/features/settings/components/update-withdrawal-account-dialog"
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -59,12 +60,17 @@ export default async function SettingsPage() {
 
           <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
             <CardHeader>
-              <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
-                Withdrawal destination
-              </CardTitle>
-              <CardDescription className="font-su-sans text-su-caption text-su-muted">
-                Bank account linked for payouts
-              </CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1.5">
+                  <CardTitle className="font-su-sans text-su-title-sm font-semibold text-su-ink">
+                    Withdrawal destination
+                  </CardTitle>
+                  <CardDescription className="font-su-sans text-su-caption text-su-muted">
+                    Bank account linked for payouts
+                  </CardDescription>
+                </div>
+                {withdrawalAccount && <UpdateWithdrawalAccountDialog />}
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
               {withdrawalAccount ? (
