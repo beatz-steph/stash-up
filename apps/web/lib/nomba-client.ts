@@ -147,7 +147,17 @@ export async function createVirtualAccount(params: CreateVirtualAccountParams) {
   }
 
   const data = await res.json();
-  return VirtualAccountResponseSchema.parse(data.data);
+  const parsed = VirtualAccountResponseSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    // Nomba can return 2xx with an error envelope (no `data`) e.g. when it
+    // rejects the account name. Surface the code/description so it's clear.
+    throw new Error(
+      `Create virtual account: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field in response"
+      }`
+    );
+  }
+  return parsed.data;
 }
 
 interface BankTransferParams {
