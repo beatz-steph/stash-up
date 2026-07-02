@@ -5,6 +5,8 @@ import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
 import { advanceRotation } from "../payout/rotation";
 import { createNotification } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
+import { sendEmail } from "@/lib/email/send";
+import { PayoutReceivedEmail } from "@/lib/email/templates/payout-received";
 export async function dispatchWebhookEvent(
   receipt: WebhookReceipt,
   payload: NombaWebhookPayload
@@ -191,17 +193,21 @@ export async function dispatchWebhookEvent(
 
       let payoutRecipientId: string | null = null;
       let amountMinor = 0;
+      let payoutCircleName = "";
 
       await prisma.$transaction(async (tx) => {
         const payout = await tx.payout.findUnique({
           where: { merchantTxRef: ref },
-          include: { cycle: { include: { recipientMembership: true } } },
+          include: {
+            cycle: { include: { recipientMembership: true, circle: { select: { name: true } } } },
+          },
         });
         if (!payout) return;
         if (payout.status === "SUCCESS") return;
 
         payoutRecipientId = payout.cycle.recipientMembership.userId;
         amountMinor = payout.amountMinor;
+        payoutCircleName = payout.cycle.circle.name;
 
         await tx.payout.update({
           where: { id: payout.id },
@@ -223,6 +229,26 @@ export async function dispatchWebhookEvent(
           title: "You've been paid!",
           body: `Your circle payout of ${formatNaira(amountMinor)} has been successfully transferred to your bank account.`,
         });
+
+        // Email the recipient too (best-effort; never fail the webhook on email).
+        try {
+          const recipient = await prisma.user.findUnique({
+            where: { id: payoutRecipientId },
+            select: { email: true },
+          });
+          if (recipient?.email) {
+            await sendEmail({
+              to: recipient.email,
+              subject: "You've been paid — StashUp payout sent",
+              react: PayoutReceivedEmail({
+                amount: formatNaira(amountMinor),
+                circleName: payoutCircleName,
+              }),
+            });
+          }
+        } catch (err) {
+          console.error("Failed to send payout email:", err instanceof Error ? err.message : err);
+        }
       }
       break;
     }

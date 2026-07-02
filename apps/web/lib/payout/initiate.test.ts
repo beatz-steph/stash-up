@@ -26,9 +26,11 @@ vi.mock("@workspace/db", () => {
 const readyCycle = {
   id: "cy-1",
   status: "READY_TO_PAYOUT",
+  sequence: 1,
   potExpectedMinor: 1000000, // ₦10,000 in kobo
   recipientMembershipId: "mem-1",
   recipientMembership: { id: "mem-1", userId: "user-1" },
+  circle: { name: "Test Circle" },
 };
 
 const withdrawalAccount = {

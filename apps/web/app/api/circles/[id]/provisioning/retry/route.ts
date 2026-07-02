@@ -6,6 +6,7 @@ import { acquireActivationLock, releaseActivationLock } from "@/lib/redis";
 import { createVirtualAccount } from "@/lib/nomba-client";
 import { finalizeActivationIfReady } from "@/lib/circles/activation";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
+import { vaAccountName } from "@/lib/nomba-format";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -64,7 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const accountRef = `membership_${membership.id}`;
         const vaRes = await createVirtualAccount({
           accountRef,
-          accountName: user.name ?? user.username ?? "StashUp Member",
+          accountName: vaAccountName(circle.name),
         });
 
         await prisma.$transaction(async (tx) => {

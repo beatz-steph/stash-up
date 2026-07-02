@@ -2,6 +2,7 @@ import { prisma } from "@workspace/db";
 import { acquirePayoutLock, releasePayoutLock } from "@/lib/redis";
 import { initiateSubAccountBankTransfer } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
+import { payoutNarration } from "@/lib/nomba-format";
 
 export async function initiatePayout(cycleId: string): Promise<void> {
   const locked = await acquirePayoutLock(cycleId);
@@ -14,10 +15,10 @@ export async function initiatePayout(cycleId: string): Promise<void> {
 
     // ── CLAIM TX ── returns the values the Nomba call needs, so nothing is read
     // through a non-null assertion on an outer `let` after the transaction.
-    const { amountMinor, wa } = await prisma.$transaction(async (tx) => {
+    const { amountMinor, wa, narration } = await prisma.$transaction(async (tx) => {
       const cycle = await tx.cycle.findUnique({
         where: { id: cycleId },
-        include: { recipientMembership: true },
+        include: { recipientMembership: true, circle: { select: { name: true } } },
       });
 
       if (!cycle) throw new Error("Cycle not found");
@@ -63,7 +64,11 @@ export async function initiatePayout(cycleId: string): Promise<void> {
         data: { status: "PAYOUT_INITIATED" },
       });
 
-      return { amountMinor: cycle.potExpectedMinor, wa: withdrawalAccount };
+      return {
+        amountMinor: cycle.potExpectedMinor,
+        wa: withdrawalAccount,
+        narration: payoutNarration(cycle.circle.name, cycle.sequence),
+      };
     });
 
     // ── NOMBA CALL (OUTSIDE any tx) ──
@@ -78,7 +83,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
         accountName: wa.accountName,
         bankCode: wa.bankCode,
         merchantTxRef,
-        narration: `StashUp payout`,
+        narration,
       });
       transferId = res.id;
       nombaStatus = res.status;
