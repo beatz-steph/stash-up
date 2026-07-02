@@ -22,6 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@workspace/ui/components/input-otp"
 import { useBanks } from "@/features/onboarding/queries/use-banks"
 import { resolveAccountName } from "@/lib/api/data/withdrawal-account"
 import {
@@ -190,15 +195,19 @@ export function UpdateWithdrawalAccountDialog() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3 py-2">
-              <Input
-                inputMode="numeric"
+            <div className="flex flex-col items-center gap-3 py-2">
+              <InputOTP
                 maxLength={6}
-                placeholder="______"
-                className="text-center font-su-mono text-su-title-md tracking-[0.5em]"
+                inputMode="numeric"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              />
+                onChange={(v) => setOtp(v.replace(/\D/g, ""))}
+              >
+                <InputOTPGroup>
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <InputOTPSlot key={i} index={i} />
+                  ))}
+                </InputOTPGroup>
+              </InputOTP>
               <button
                 type="button"
                 className="font-su-sans text-su-caption text-su-primary hover:underline disabled:opacity-50"
