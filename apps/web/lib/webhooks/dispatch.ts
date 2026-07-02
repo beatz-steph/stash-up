@@ -1,7 +1,10 @@
 import { prisma } from "@workspace/db";
-import type { WebhookReceipt, Prisma } from "@workspace/db";
+import type { WebhookReceipt } from "@workspace/db";
 import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
+import { advanceRotation } from "../payout/rotation";
+import { createNotification } from "@/lib/notifications";
+import { formatNaira } from "@/lib/money";
 export async function dispatchWebhookEvent(
   receipt: WebhookReceipt,
   payload: NombaWebhookPayload
@@ -14,7 +17,7 @@ export async function dispatchWebhookEvent(
       if (!transaction) throw new Error("Missing transaction in payment_success");
 
       const aliasAccountReference = transaction.aliasAccountReference || "";
-      const rawAmount = transaction.amount;
+      const rawAmount = transaction.transactionAmount;
       const amountMinor = Math.round(Number(rawAmount) * 100);
 
       // 1. Gather context
@@ -183,10 +186,87 @@ export async function dispatchWebhookEvent(
       break;
     }
 
-    case "payout_success":
-    case "payout_failed":
+    case "payout_success": {
+      const ref = payload.data?.transaction?.merchantTxRef;
+      if (!ref) throw new Error("payout_success missing merchantTxRef");
+
+      let payoutRecipientId: string | null = null;
+      let amountMinor = 0;
+
+      await prisma.$transaction(async (tx) => {
+        const payout = await tx.payout.findUnique({
+          where: { merchantTxRef: ref },
+          include: { cycle: { include: { recipientMembership: true } } },
+        });
+        if (!payout) return;
+        if (payout.status === "SUCCESS") return;
+
+        payoutRecipientId = payout.cycle.recipientMembership.userId;
+        amountMinor = payout.amountMinor;
+
+        await tx.payout.update({
+          where: { id: payout.id },
+          data: { status: "SUCCESS", nombaStatus: "SUCCESS" },
+        });
+
+        await tx.cycle.update({
+          where: { id: payout.cycleId },
+          data: { status: "PAID_OUT", paidOutAt: new Date() },
+        });
+
+        await advanceRotation(tx, payout.cycle.circleId, payout.cycle);
+      });
+
+      if (payoutRecipientId) {
+        await createNotification({
+          userId: payoutRecipientId,
+          type: "PAYOUT_RECEIVED",
+          title: "You've been paid!",
+          body: `Your circle payout of ${formatNaira(amountMinor)} has been successfully transferred to your bank account.`,
+        });
+      }
+      break;
+    }
+
+    case "payout_failed": {
+      const ref = payload.data?.transaction?.merchantTxRef;
+      if (!ref) throw new Error("payout_failed missing merchantTxRef");
+
+      const reason = payload.data?.transaction?.responseCode || payload.data?.transaction?.narration || "Unknown failure";
+
+      let payoutRecipientId: string | null = null;
+      let amountMinor = 0;
+
+      await prisma.$transaction(async (tx) => {
+        const payout = await tx.payout.findUnique({
+          where: { merchantTxRef: ref },
+          include: { cycle: { include: { recipientMembership: true } } },
+        });
+        if (!payout) return;
+        if (payout.status === "FAILED") return;
+
+        payoutRecipientId = payout.cycle.recipientMembership.userId;
+        amountMinor = payout.amountMinor;
+
+        await tx.payout.update({
+          where: { id: payout.id },
+          data: { status: "FAILED", failureReason: reason },
+        });
+        // Leave cycle at PAYOUT_INITIATED for admin retry (Sprint 8)
+      });
+
+      if (payoutRecipientId) {
+        await createNotification({
+          userId: payoutRecipientId,
+          type: "GENERIC", // no PAYOUT_FAILED enum; GENERIC avoids mislabelling a failure as "sent"
+          title: "Payout Failed",
+          body: `Your circle payout of ${formatNaira(amountMinor)} failed. Reason: ${reason}. Please contact support.`,
+        });
+      }
+      break;
+    }
+
     case "payout_refund":
-      // Sprint 5: Handle payout status updates gracefully
       console.log(`[Webhook] Graceful no-op for ${eventType} for receipt ${receipt.id}`);
       break;
 

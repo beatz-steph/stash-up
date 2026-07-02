@@ -13,7 +13,8 @@ export interface NombaWebhookPayload {
       type?: string;
       time?: string;
       responseCode?: string;
-      amount?: number | string;
+      transactionAmount?: number | string;
+      merchantTxRef?: string;
       aliasAccountReference?: string;
       currency?: string;
       senderName?: string;

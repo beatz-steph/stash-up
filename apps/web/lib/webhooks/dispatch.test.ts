@@ -56,7 +56,7 @@ describe("dispatchWebhookEvent", () => {
     data: {
       transaction: {
         aliasAccountReference: "ref-1",
-        amount: "50.00",
+        transactionAmount: "50.00",
         transactionId: "tx-1",
       },
     },
