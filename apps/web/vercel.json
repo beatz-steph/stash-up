@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/cycle-sweep",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/payout-sweep",
+      "schedule": "0 * * * *"
     }
   ]
 }
