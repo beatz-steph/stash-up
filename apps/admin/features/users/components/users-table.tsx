@@ -12,17 +12,43 @@ import {
 } from "@workspace/ui/components/table"
 import { Badge } from "@workspace/ui/components/badge"
 import Link from "next/link"
+import { authClient } from "@/lib/auth-client"
+import { MoreHorizontal } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu"
+import { Button } from "@workspace/ui/components/button"
+import { UserBlockDialog } from "./user-block-dialog"
 
 export function UsersTable() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
   
+  const { data: sessionData } = authClient.useSession()
+  const isSuperAdmin = sessionData?.user?.role === "SUPER_ADMIN"
+
   const { data, isLoading, isError } = useUsers({ page, limit: 50, search: search || undefined })
+
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<{ id: string, name: string, blocked: boolean } | null>(null)
 
   if (isError) return <div className="text-su-semantic-down">Failed to load users</div>
 
   return (
     <div className="space-y-4">
+      {selectedUser && (
+        <UserBlockDialog
+          open={blockDialogOpen}
+          onOpenChange={setBlockDialogOpen}
+          userId={selectedUser.id}
+          userName={selectedUser.name}
+          currentlyBlocked={selectedUser.blocked}
+        />
+      )}
+
       <div className="flex items-center gap-4">
         <input
           type="text"
@@ -74,9 +100,32 @@ export function UsersTable() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/users/${user.id}`} className="text-su-primary hover:underline font-medium text-sm">
-                      View
-                    </Link>
+                    <div className="flex justify-end items-center gap-2">
+                      <Link href={`/users/${user.id}`} className="text-su-primary hover:underline font-medium text-sm">
+                        View
+                      </Link>
+                      {isSuperAdmin && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <span className="sr-only">Open menu</span>
+                              <MoreHorizontal className="h-4 w-4 text-su-muted" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedUser({ id: user.id, name: user.name, blocked: user.blockedFromCircles })
+                                setBlockDialogOpen(true)
+                              }}
+                              className={user.blockedFromCircles ? "" : "text-su-semantic-down focus:text-su-semantic-down"}
+                            >
+                              {user.blockedFromCircles ? "Unblock User" : "Block User"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

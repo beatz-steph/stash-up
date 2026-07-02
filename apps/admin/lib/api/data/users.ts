@@ -16,3 +16,7 @@ export async function getUsers(
 export async function getUser(id: string, options?: ApiOptions) {
   return api.get(`/api/users/${id}`, userDetailResponseSchema, options)
 }
+
+export async function blockUser(id: string, blocked: boolean, options?: ApiOptions) {
+  return api.post(`/api/users/${id}/block`, { blocked }, undefined, options)
+}
