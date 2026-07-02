@@ -14,11 +14,16 @@ const connectionString = process.env.DATABASE_URL!
 const pool = new pg.Pool({ connectionString })
 const adapter = new PrismaPg(pool)
 
+// Query logging is noisy and drowns out app logs. Default to error/warn in dev;
+// opt back into full query logging with PRISMA_LOG_QUERIES=1 when you need it.
+const devLog: ("query" | "error" | "warn")[] =
+  process.env.PRISMA_LOG_QUERIES === "1" ? ["query", "error", "warn"] : ["error", "warn"]
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+    log: process.env.NODE_ENV === "development" ? devLog : ["error"],
   })
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
