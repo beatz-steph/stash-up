@@ -17,6 +17,7 @@ vi.mock("@workspace/db", () => {
       cycle: { findUnique: vi.fn(), update: vi.fn() },
       withdrawalAccount: { findUnique: vi.fn() },
       payout: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+      nombaConfig: { findFirst: vi.fn() },
       $transaction: vi.fn(async (cb) => cb(prisma)),
     },
   };
@@ -54,6 +55,7 @@ describe("initiatePayout", () => {
       id: "transfer-1",
       status: "SUCCESS",
     });
+    vi.mocked(prisma.nombaConfig.findFirst).mockResolvedValue(null);
   });
 
   it("refuses when the lock cannot be acquired (no Nomba call, no DB writes)", async () => {
@@ -94,6 +96,14 @@ describe("initiatePayout", () => {
     await expect(initiatePayout("cy-1")).rejects.toThrow("Payout already initiated");
     expect(initiateSubAccountBankTransfer).not.toHaveBeenCalled();
     expect(releasePayoutLock).toHaveBeenCalledWith("cy-1");
+  });
+
+  it("refuses if NombaConfig.status is INVALID (but allows if absent or ACTIVE)", async () => {
+    vi.mocked(prisma.nombaConfig.findFirst).mockResolvedValue({ status: "INVALID" } as never);
+
+    await expect(initiatePayout("cy-1")).rejects.toThrow("Nomba integration is disabled");
+    expect(prisma.payout.create).not.toHaveBeenCalled();
+    expect(initiateSubAccountBankTransfer).not.toHaveBeenCalled();
   });
 
   it("happy path: snapshots potExpectedMinor, converts kobo to naira, flips cycle, records transfer id", async () => {

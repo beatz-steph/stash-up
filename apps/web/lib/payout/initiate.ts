@@ -1,6 +1,7 @@
 import { prisma } from "@workspace/db";
 import { acquirePayoutLock, releasePayoutLock } from "@/lib/redis";
 import { initiateSubAccountBankTransfer } from "@/lib/nomba-client";
+import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 
 export async function initiatePayout(cycleId: string): Promise<void> {
   const locked = await acquirePayoutLock(cycleId);
@@ -22,6 +23,10 @@ export async function initiatePayout(cycleId: string): Promise<void> {
       if (!cycle) throw new Error("Cycle not found");
       if (cycle.status !== "READY_TO_PAYOUT") {
         throw new Error("Cycle is not READY_TO_PAYOUT");
+      }
+
+      if (await isNombaIntegrationDisabled(tx)) {
+        throw new Error("Nomba integration is disabled");
       }
 
       const withdrawalAccount = await tx.withdrawalAccount.findUnique({

@@ -5,6 +5,7 @@ import { requireCircleCreator } from "@/lib/access-control";
 import { acquireActivationLock, releaseActivationLock } from "@/lib/redis";
 import { createVirtualAccount } from "@/lib/nomba-client";
 import { finalizeActivationIfReady } from "@/lib/circles/activation";
+import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -40,6 +41,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const activeMemberships = circle.memberships.filter((m) => m.status === "ACTIVE");
   if (activeMemberships.length !== circle.totalSlots) {
     return apiError("Circle slots are not full", 400);
+  }
+
+  if (await isNombaIntegrationDisabled()) {
+    return apiError("Nomba integration is disabled", 403);
   }
 
   const lockAcquired = await acquireActivationLock(id);

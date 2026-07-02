@@ -24,6 +24,7 @@ vi.mock("@workspace/db", () => {
       user: { findUnique: vi.fn() },
       membership: { update: vi.fn() },
       virtualAccount: { upsert: vi.fn() },
+      nombaConfig: { findFirst: vi.fn() },
       $transaction: vi.fn((fn) => fn(prisma)),
     },
   };
@@ -32,6 +33,7 @@ vi.mock("@workspace/db", () => {
 describe("POST /api/circles/[id]/activate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.nombaConfig.findFirst).mockResolvedValue(null);
   });
 
   it("returns 409 if lock cannot be acquired (double click)", async () => {
@@ -52,6 +54,26 @@ describe("POST /api/circles/[id]/activate", () => {
     const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ success: false, error: "Activation already in progress" });
+  });
+
+  it("returns 403 if NombaConfig.status is INVALID", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "creator-1" }));
+    vi.mocked(prisma.circle.findUnique).mockResolvedValue({
+      id: "circle-1",
+      status: "FORMING",
+      totalSlots: 2,
+      memberships: [
+        { id: "m1", status: "ACTIVE", userId: "u1" },
+        { id: "m2", status: "ACTIVE", userId: "u2" },
+      ],
+    } as never);
+    
+    vi.mocked(prisma.nombaConfig.findFirst).mockResolvedValue({ status: "INVALID" } as never);
+
+    const req = new NextRequest("http://localhost/api/circles/circle-1/activate", { method: "POST" });
+    const res = await POST(req, { params: Promise.resolve({ id: "circle-1" }) });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ success: false, error: "Nomba integration is disabled" });
   });
 
   it("handles partial Nomba failure gracefully and leaves succeeded VAs persisted", async () => {
