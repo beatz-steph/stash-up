@@ -3,6 +3,7 @@
 import { useCircleDetail, useVirtualAccount } from "../queries"
 import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
+import { CycleHistory } from "./cycle-history"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
@@ -491,6 +492,10 @@ export function CircleDetail({ circleId }: { circleId: string }) {
           </Card>
         </div>
       </div>
+
+      {circle.cycles && circle.cycles.length > 0 && (
+        <CycleHistory cycles={circle.cycles} members={circle.members} />
+      )}
     </div>
   )
 }

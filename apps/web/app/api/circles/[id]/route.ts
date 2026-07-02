@@ -51,7 +51,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           },
         },
       },
-      cycles: true, // We will filter this in memory since Prisma doesn't support where sequence = currentCycleSeq directly inside include easily without multiple queries, or we can just fetch the current cycle. Let's fetch it separately for simplicity if needed, or include all and filter.
+      cycles: {
+        include: { payout: { select: { status: true } } },
+        orderBy: { sequence: "asc" },
+      },
     },
   });
 
@@ -121,6 +124,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           status: c.status,
         }))
       : [],
+    cycles: circle.cycles.map((c) => ({
+      id: c.id,
+      sequence: c.sequence,
+      status: c.status,
+      potCollectedMinor: c.potCollectedMinor,
+      potExpectedMinor: c.potExpectedMinor,
+      recipientMembershipId: c.recipientMembershipId,
+      paidOutAt: c.paidOutAt,
+      payoutStatus: c.payout?.status ?? null,
+    })),
   };
 
   return apiSuccess<CircleDetailRes>(response);

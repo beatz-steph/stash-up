@@ -79,7 +79,8 @@ describe("/api/circles/[id]", () => {
           status: "PENDING",
           expiresAt: new Date(),
           invitedUser: { id: "user-2", name: "User 2", username: "user2", image: null }
-        }]
+        }],
+        cycles: []
       } as never);
       vi.mocked(prisma.cycle.findUnique).mockResolvedValue({
         id: "cycle-1",

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, Inbox, Settings } from "lucide-react"
+import { LayoutDashboard, Users, Inbox, Receipt, Settings } from "lucide-react"
 
 import {
   Sidebar,
@@ -25,6 +25,7 @@ import { useMyInvites } from "@/features/circles/queries"
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/circles", label: "Circles", icon: Users, exact: false },
+  { href: "/transactions", label: "Transactions", icon: Receipt, exact: false },
   { href: "/invites", label: "Invites", icon: Inbox, exact: false },
   { href: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const

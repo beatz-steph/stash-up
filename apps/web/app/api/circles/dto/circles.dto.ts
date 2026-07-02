@@ -74,6 +74,17 @@ export const ContributionDetailSchema = z.object({
   membershipId: z.string(),
   amountMinor: z.number().int(),
   status: z.string(),
+})
+
+export const CycleHistorySchema = z.object({
+  id: z.string(),
+  sequence: z.number().int(),
+  status: z.string(),
+  potCollectedMinor: z.number().int(),
+  potExpectedMinor: z.number().int(),
+  recipientMembershipId: z.string(),
+  paidOutAt: z.date().or(z.string()).nullable(),
+  payoutStatus: z.string().nullable(),
 });
 
 export const CircleDetailResSchema = z.object({
@@ -90,6 +101,7 @@ export const CircleDetailResSchema = z.object({
   invites: z.array(InviteDetailSchema),
   currentCycle: CycleDetailSchema.nullable().optional(),
   contributions: z.array(ContributionDetailSchema).optional(),
+  cycles: z.array(CycleHistorySchema).optional(),
 });
 
 export const InviteResSchema = z.object({
