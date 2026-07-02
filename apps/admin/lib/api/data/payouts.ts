@@ -12,3 +12,7 @@ export async function getPayouts(
 
   return api.get(`/api/payouts?${searchParams.toString()}`, payoutListResponseSchema, options)
 }
+
+export async function retryPayout(id: string, options?: ApiOptions) {
+  return api.post(`/api/payouts/${id}/retry`, undefined, undefined, options)
+}

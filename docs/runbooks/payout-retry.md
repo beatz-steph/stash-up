@@ -41,4 +41,5 @@ await prisma.cycle.update({
 If Nomba rejected the transfer:
 1. Fix the underlying issue (e.g. ask the user to update their withdrawal bank details, or top up the Nomba master balance).
 2. Since `merchantTxRef` must be unique per cycle (`payout_<cycleId>`), you cannot simply hit the initiate API again with the same ref.
-3. *Note: Admin retry tooling will be built in Sprint 8. Until then, engineering must manually intervene.*
+3. *Note on Admin UI (Sprint 8):* The "Retry Request" button in the admin interface **records intent only**. It writes an audit log (`PAYOUT_RETRY_REQUESTED`) so operators can track which payouts need attention. It does **not** automatically re-send the payout to Nomba or create a new `Payout` database row.
+4. Engineering must manually intervene to execute the retry by generating a new `merchantTxRef` (e.g., `payout_<cycleId>_r1`), updating the `Payout` record, and re-invoking the engine. Automated retry functionality will be built in a future sprint.
