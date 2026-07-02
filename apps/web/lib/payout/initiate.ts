@@ -1,0 +1,113 @@
+import { prisma } from "@workspace/db";
+import { acquirePayoutLock, releasePayoutLock } from "@/lib/redis";
+import { initiateSubAccountBankTransfer } from "@/lib/nomba-client";
+
+export async function initiatePayout(cycleId: string): Promise<void> {
+  const locked = await acquirePayoutLock(cycleId);
+  if (!locked) {
+    throw new Error("Could not acquire payout lock");
+  }
+
+  try {
+    // ── CLAIM TX ──
+    let amountMinor = 0;
+    const merchantTxRef = `payout_${cycleId}`; // Sprint 5 one-shot ref
+    let wa: { accountNumber: string; bankCode: string; bankName: string; accountName: string };
+
+    await prisma.$transaction(async (tx) => {
+      const cycle = await tx.cycle.findUnique({
+        where: { id: cycleId },
+        include: { recipientMembership: true },
+      });
+
+      if (!cycle) throw new Error("Cycle not found");
+      if (cycle.status !== "READY_TO_PAYOUT") {
+        throw new Error("Cycle is not READY_TO_PAYOUT");
+      }
+
+      const withdrawalAccount = await tx.withdrawalAccount.findUnique({
+        where: { userId: cycle.recipientMembership.userId },
+      });
+
+      if (!withdrawalAccount) {
+        throw new Error("Recipient has no withdrawal account");
+      }
+
+      amountMinor = cycle.potExpectedMinor;
+      wa = withdrawalAccount;
+
+      try {
+        await tx.payout.create({
+          data: {
+            cycleId,
+            recipientMembershipId: cycle.recipientMembershipId,
+            amountMinor,
+            merchantTxRef,
+            recipientAccountNumber: wa.accountNumber,
+            recipientBankCode: wa.bankCode,
+            recipientBankName: wa.bankName,
+            recipientAccountName: wa.accountName,
+            status: "INITIATED",
+          },
+        });
+      } catch (e) {
+        if ((e as { code?: string }).code === "P2002") {
+          throw new Error("Payout already initiated");
+        }
+        throw e;
+      }
+
+      await tx.cycle.update({
+        where: { id: cycleId },
+        data: { status: "PAYOUT_INITIATED" },
+      });
+    });
+
+    // ── NOMBA CALL (OUTSIDE any tx) ──
+    let transferId: string | undefined;
+    let nombaStatus: string | undefined;
+    let nombaError: unknown;
+
+    try {
+      const res = await initiateSubAccountBankTransfer({
+        amount: amountMinor / 100, // naira
+        accountNumber: wa!.accountNumber,
+        accountName: wa!.accountName,
+        bankCode: wa!.bankCode,
+        merchantTxRef,
+        narration: `StashUp payout`,
+      });
+      transferId = res.id;
+      nombaStatus = res.status;
+    } catch (err) {
+      nombaError = err;
+    }
+
+    // ── RESULT TX ──
+    if (nombaError) {
+      // Phase 2 Nomba throw: leave cycle at PAYOUT_INITIATED, set Payout.nombaStatus = "UNKNOWN"
+      await prisma.payout.update({
+        where: { merchantTxRef },
+        data: {
+          nombaStatus: "UNKNOWN",
+          failureReason: String(nombaError),
+          // DO NOT mark FAILED here — let the webhook finalize.
+        },
+      });
+      throw new Error(`Nomba initiation failed: ${nombaError}`);
+    } else {
+      // Success response from Nomba
+      await prisma.$transaction(async (tx) => {
+        const payout = await tx.payout.findUnique({ where: { merchantTxRef } });
+        if (payout && payout.status === "INITIATED") {
+          await tx.payout.update({
+            where: { merchantTxRef },
+            data: { nombaTransferId: transferId, nombaStatus },
+          });
+        }
+      });
+    }
+  } finally {
+    await releasePayoutLock(cycleId);
+  }
+}
