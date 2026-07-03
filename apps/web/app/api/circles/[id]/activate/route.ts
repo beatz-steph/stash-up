@@ -1,6 +1,6 @@
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
-import { prisma } from "@workspace/db";
+import { prisma, type Membership } from "@workspace/db";
 import { requireCircleCreator } from "@/lib/access-control";
 import { acquireActivationLock, releaseActivationLock } from "@/lib/redis";
 import { createVirtualAccount } from "@/lib/nomba-client";
@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return apiError("Circle is not forming", 400);
   }
 
-  const activeMemberships = circle.memberships.filter((m) => m.status === "ACTIVE");
+  const activeMemberships = circle.memberships.filter((m: Membership) => m.status === "ACTIVE");
   if (activeMemberships.length !== circle.totalSlots) {
     return apiError("Circle slots are not full", 400);
   }
