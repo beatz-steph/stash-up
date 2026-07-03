@@ -1,6 +1,6 @@
 "use client"
 
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation } from "@tanstack/react-query"
 import { toast } from "@workspace/ui/components/sonner"
 import {
   requestWithdrawalOtp,
@@ -18,15 +18,22 @@ export function useRequestWithdrawalOtp() {
   })
 }
 
-/** Save the changed payout account (requires the OTP in the body). */
+/**
+ * Save the changed payout account (requires the OTP in the body).
+ *
+ * Forces a full browser reload on success instead of a query invalidation —
+ * a client-side refresh was found to leave onboarding state (banner,
+ * OnboardingProvider) stale elsewhere in the app after the withdrawal
+ * account changes. The success toast is dropped because window.location.reload()
+ * tears down the toast host before it can be seen; the dialog closing +
+ * reload is itself the feedback.
+ */
 export function useUpdateWithdrawalAccount(onSuccess?: () => void) {
-  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: SaveWithdrawalAccountReq) => saveWithdrawalAccount(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["withdrawal-account"] })
-      toast.success("Payout account updated")
       onSuccess?.()
+      window.location.reload()
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not update account")
