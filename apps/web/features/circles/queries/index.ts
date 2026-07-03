@@ -20,6 +20,10 @@ export function useCircleDetail(id: string) {
     queryKey: CIRCLE_QUERY_KEYS.detail(id),
     queryFn: () => fetchCircle(id),
     enabled: !!id,
+    // Freshen on tab-switch-back; notification-driven invalidation (item 5)
+    // handles live updates while the tab stays open.
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
   })
 }
 

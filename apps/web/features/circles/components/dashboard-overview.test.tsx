@@ -40,6 +40,10 @@ let invitesResponse: unknown[] = []
 const server = setupServer(
   http.get("*/api/circles", () => HttpResponse.json(circlesResponse)),
   http.get("*/api/invites", () => HttpResponse.json(invitesResponse)),
+  // OnboardingProvider mounts useRealtimeInvalidation, which polls notifications.
+  http.get("*/api/notifications", () =>
+    HttpResponse.json({ success: true, data: { items: [], unreadCount: 0, nextCursor: null } }),
+  ),
 )
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }))

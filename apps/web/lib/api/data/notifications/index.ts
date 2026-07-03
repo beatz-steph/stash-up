@@ -5,8 +5,9 @@ import type {
   MarkReadReq,
 } from "@/app/api/notifications/dto/notification.dto"
 
-export function fetchNotifications(options?: ApiOptions) {
-  return api.get<NotificationListRes>("/api/notifications", options)
+export function fetchNotifications(cursor?: string | null, options?: ApiOptions) {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+  return api.get<NotificationListRes>(`/api/notifications${qs}`, options)
 }
 
 export function markNotificationsRead(body: MarkReadReq, options?: ApiOptions) {

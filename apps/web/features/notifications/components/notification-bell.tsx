@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Bell } from "lucide-react"
+import { Bell, Loader2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Badge } from "@workspace/ui/components/badge"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
@@ -26,11 +26,8 @@ function timeAgo(iso: string): string {
 
 export function NotificationBell() {
   const router = useRouter()
-  const { data } = useNotifications()
+  const { items, unreadCount, fetchNextPage, hasNextPage, isFetchingNextPage } = useNotifications()
   const markRead = useMarkNotificationsRead()
-
-  const items = data?.items ?? []
-  const unreadCount = data?.unreadCount ?? 0
 
   const handleItemClick = (n: Notification) => {
     if (!n.readAt) markRead.mutate({ ids: [n.id] })
@@ -110,6 +107,19 @@ export function NotificationBell() {
                 </li>
               ))}
             </ul>
+          )}
+          {hasNextPage && (
+            <div className="flex justify-center border-t border-su-hairline-soft p-3">
+              <button
+                type="button"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+                className="flex items-center gap-1.5 font-su-sans text-su-caption font-semibold text-su-primary hover:text-su-primary-active disabled:opacity-50"
+              >
+                {isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Load more
+              </button>
+            </div>
           )}
         </ScrollArea>
       </PopoverContent>

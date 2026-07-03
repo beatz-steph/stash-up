@@ -30,6 +30,7 @@ export type Notification = z.infer<typeof NotificationSchema>
 export const NotificationListResSchema = z.object({
   items: z.array(NotificationSchema),
   unreadCount: z.number(),
+  nextCursor: z.string().nullable(),
 })
 export type NotificationListRes = z.infer<typeof NotificationListResSchema>
 

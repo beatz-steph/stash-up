@@ -1,14 +1,22 @@
 "use client"
 
-import { Receipt } from "lucide-react"
+import { Loader2, Receipt } from "lucide-react"
 
+import { Button } from "@workspace/ui/components/button"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import { useTransactions } from "../queries/use-transactions"
+import { useInfiniteTransactions } from "../queries/use-transactions"
 import { TransactionsList } from "./transactions-list"
 
 export function AllTransactions() {
-  const { data, isLoading, isError } = useTransactions()
-  const items = data?.items ?? []
+  const {
+    data,
+    isLoading,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteTransactions()
+  const items = data?.pages.flatMap((page) => page.items) ?? []
 
   if (isLoading) {
     return (
@@ -49,6 +57,19 @@ export function AllTransactions() {
   return (
     <div className="rounded-su-xl border border-su-hairline bg-su-surface-card">
       <TransactionsList items={items} />
+      {hasNextPage && (
+        <div className="flex justify-center border-t border-su-hairline-soft p-su-lg">
+          <Button
+            variant="outline"
+            className="rounded-su-pill"
+            disabled={isFetchingNextPage}
+            onClick={() => fetchNextPage()}
+          >
+            {isFetchingNextPage && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Load more
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

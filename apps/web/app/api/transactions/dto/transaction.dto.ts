@@ -15,5 +15,6 @@ export type TransactionItem = z.infer<typeof TransactionItemSchema>
 
 export const TransactionListResSchema = z.object({
   items: z.array(TransactionItemSchema),
+  nextCursor: z.string().nullable(),
 })
 export type TransactionListRes = z.infer<typeof TransactionListResSchema>
