@@ -5,7 +5,7 @@ import { getSessionCookie } from "better-auth/cookies"
 const publicRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"]
 
 // Define API routes that are meant to be publicly accessible (e.g., auth handlers, webhooks)
-const publicApiRoutes = ["/api/auth", "/api/webhooks/nomba"]
+const publicApiRoutes = ["/api/auth", "/api/username-available", "/api/webhooks/nomba"]
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
