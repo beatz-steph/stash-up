@@ -12,6 +12,12 @@ import {
 } from "@react-email/components"
 import * as React from "react"
 
+// Email clients need absolute URLs (no relative paths). The site canonicalizes
+// to the www origin (apex redirects), and some email proxies refuse to follow
+// that redirect when fetching remote images — so point at www directly.
+const EMAIL_ASSET_ORIGIN =
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://www.stashup.xyz"
+
 export interface EmailLayoutProps {
   children: React.ReactNode
   previewText: string
@@ -33,8 +39,8 @@ export const EmailLayout = ({
         <Container style={container}>
           <Section style={header}>
             <Img
-              src="https://stashup.xyz/logo.png"
-              width="150"
+              src={`${EMAIL_ASSET_ORIGIN}/logo.png`}
+              width="40"
               height="40"
               alt="StashUp"
               style={logo}
@@ -85,6 +91,7 @@ const header = {
 
 const logo = {
   margin: "0 auto",
+  display: "block", // Outlook gap fix
 }
 
 const headingStyle = {
