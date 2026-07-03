@@ -1,4 +1,4 @@
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import type { WebhookReceipt } from "@workspace/db";
 import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
@@ -87,7 +87,7 @@ export async function dispatchWebhookEvent(
       }
 
       // 4. DB Transaction
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         // A. Create InboundTransfer
         try {
           await tx.inboundTransfer.create({
@@ -195,7 +195,7 @@ export async function dispatchWebhookEvent(
       let amountMinor = 0;
       let payoutCircleName = "";
 
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const payout = await tx.payout.findUnique({
           where: { merchantTxRef: ref },
           include: {
@@ -262,7 +262,7 @@ export async function dispatchWebhookEvent(
       let payoutRecipientId: string | null = null;
       let amountMinor = 0;
 
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const payout = await tx.payout.findUnique({
           where: { merchantTxRef: ref },
           include: { cycle: { include: { recipientMembership: true } } },

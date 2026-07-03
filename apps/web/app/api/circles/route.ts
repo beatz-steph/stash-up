@@ -1,6 +1,6 @@
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import { requireOnboardingComplete } from "@/lib/access-control";
 import { captureServer } from "@/lib/analytics/server";
 import { AnalyticsEvent } from "@/lib/analytics/events";
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   }
 
   // Create Circle and Membership
-  const circle = await prisma.$transaction(async (tx) => {
+  const circle = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     return await tx.circle.create({
       data: {
         name: data.name,

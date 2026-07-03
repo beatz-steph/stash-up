@@ -1,6 +1,6 @@
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import { requireCircleCreator } from "@/lib/access-control";
 import { acquireActivationLock, releaseActivationLock } from "@/lib/redis";
 import { createVirtualAccount } from "@/lib/nomba-client";
@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           accountName: vaAccountName(circle.name),
         });
 
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await tx.virtualAccount.upsert({
             where: { membershipId: membership.id },
             update: {

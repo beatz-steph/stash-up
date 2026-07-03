@@ -1,4 +1,4 @@
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import { acquirePayoutLock, releasePayoutLock } from "@/lib/redis";
 import { initiateSubAccountBankTransfer } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
@@ -15,7 +15,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
 
     // ── CLAIM TX ── returns the values the Nomba call needs, so nothing is read
     // through a non-null assertion on an outer `let` after the transaction.
-    const { amountMinor, wa, narration } = await prisma.$transaction(async (tx) => {
+    const { amountMinor, wa, narration } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const cycle = await tx.cycle.findUnique({
         where: { id: cycleId },
         include: { recipientMembership: true, circle: { select: { name: true } } },
@@ -105,7 +105,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
       throw new Error(`Nomba initiation failed: ${nombaError}`);
     } else {
       // Success response from Nomba
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const payout = await tx.payout.findUnique({ where: { merchantTxRef } });
         if (payout && payout.status === "INITIATED") {
           await tx.payout.update({

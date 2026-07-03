@@ -1,4 +1,4 @@
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import { apiSuccess, apiError } from "@/lib/api/response";
 
 export async function GET(request: Request) {
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   // 3. Process each cycle in its own transaction so a failure in one doesn't roll back all
   for (const cycle of overdueCycles) {
     try {
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         // Re-check cycle status inside tx
         const currentCycle = await tx.cycle.findUnique({
           where: { id: cycle.id },

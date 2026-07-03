@@ -56,7 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const membership = await prisma.$transaction(async (tx) => {
+    const membership = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Find lowest available payout position
       const members = await tx.membership.findMany({
         where: { circleId: circle.id },

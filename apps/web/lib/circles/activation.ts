@@ -1,4 +1,4 @@
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import type { Frequency } from "@workspace/db";
 
 export function calculateDeadline(frequency: Frequency): Date {
@@ -31,7 +31,7 @@ export async function finalizeActivationIfReady(circleId: string) {
   }
 
   // All active members are provisioned, we can activate the circle
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Re-check circle status to prevent double-activation within transaction
     const currentCircle = await tx.circle.findUnique({ where: { id: circleId } });
     if (currentCircle?.status !== "FORMING") return;

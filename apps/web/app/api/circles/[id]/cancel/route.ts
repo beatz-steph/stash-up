@@ -1,7 +1,7 @@
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session"
 
-import { prisma } from "@workspace/db";
+import { prisma, Prisma } from "@workspace/db";
 import { requireCircleCreator, requireFormingCircle } from "@/lib/access-control";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return apiError("Unknown error", 403);
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.circle.update({
       where: { id },
       data: { status: "CANCELLED" },
