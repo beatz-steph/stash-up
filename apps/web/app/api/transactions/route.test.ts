@@ -103,8 +103,12 @@ describe("GET /api/transactions", () => {
       expect(data.items.map((i: { id: string }) => i.id)).toEqual(["out_p5", "out_p4"])
       expect(data.nextCursor).not.toBeNull()
 
+      // Cursor id keeps the "out_"/"in_" prefix — InboundTransfer and Payout
+      // ids are independent cuid sequences, so a raw id from one table means
+      // nothing against the other table's id column. The prefix is what lets
+      // the per-source filters resolve an equal-timestamp tie correctly.
       const decoded = decodeCursor(data.nextCursor)
-      expect(decoded).toEqual({ createdAt: "2026-06-04T10:00:00.000Z", id: "p4" })
+      expect(decoded).toEqual({ createdAt: "2026-06-04T10:00:00.000Z", id: "out_p4" })
     })
 
     it("page 2 (using page 1's cursor) excludes page-1 items and applies the cursor filter to both sources", async () => {
@@ -113,7 +117,7 @@ describe("GET /api/transactions", () => {
       vi.mocked(prisma.payout.findMany).mockResolvedValue(payoutRows.slice(2, 5) as never)
 
       const { encodeCursor } = await import("@/lib/api/cursor")
-      const cursor = encodeCursor({ createdAt: "2026-06-04T10:00:00.000Z", id: "p4" })
+      const cursor = encodeCursor({ createdAt: "2026-06-04T10:00:00.000Z", id: "out_p4" })
 
       const res = await GET(req(`http://localhost/api/transactions?limit=2&cursor=${cursor}`))
       const { data } = await res.json()
@@ -127,7 +131,11 @@ describe("GET /api/transactions", () => {
       expect(data.nextCursor).not.toBeNull()
 
       // The cursor filter must have reached both underlying queries (both
-      // sources feed the same merged feed, so both must be bounded).
+      // sources feed the same merged feed, so both must be bounded). Cursor
+      // belongs to the payout source, so: payouts get `id < p4` (raw), and
+      // inbound gets the tie timestamp with NO id restriction (every
+      // contribution at that instant is still eligible — none were emitted
+      // on page 1, since payouts always sort first at a tie).
       expect(prisma.payout.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -145,7 +153,7 @@ describe("GET /api/transactions", () => {
             virtualAccount: { membership: { userId: "user-1" } },
             OR: [
               { receivedAt: { lt: new Date("2026-06-04T10:00:00.000Z") } },
-              { receivedAt: new Date("2026-06-04T10:00:00.000Z"), id: { lt: "p4" } },
+              { receivedAt: new Date("2026-06-04T10:00:00.000Z") },
             ],
           }),
         }),
@@ -161,6 +169,55 @@ describe("GET /api/transactions", () => {
 
       expect(data.items).toHaveLength(1)
       expect(data.nextCursor).toBeNull()
+    })
+
+    it("equal-timestamp rows across BOTH sources page correctly (cross-source tie, no dup/skip)", async () => {
+      // Payout p1 and contribution t1 share the exact same instant. In the
+      // merge, "out_p1" sorts before "in_t1" (prefix compare, "out_" > "in_"
+      // lexically). Page 1 (limit=1) should return only the payout; page 2
+      // (resuming from that cursor) must return the contribution — not skip
+      // it (a raw-id cross-table compare would have silently dropped it).
+      const tieTimestamp = new Date("2026-06-15T10:00:00Z")
+      const payoutTie = {
+        id: "p1",
+        amountMinor: 1000,
+        status: "SUCCESS",
+        createdAt: tieTimestamp,
+        cycle: { sequence: 1, circle: { id: "c1", name: "Alpha" } },
+      }
+      const inboundTie = {
+        id: "t1",
+        amountMinor: 2000,
+        matchStatus: "MATCHED",
+        receivedAt: tieTimestamp,
+        matchedCycle: { sequence: 1 },
+        virtualAccount: { membership: { circle: { id: "c1", name: "Alpha" } } },
+      }
+
+      // Page 1: both sources return their one row (limit+1 = 2 requested).
+      vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValueOnce([inboundTie] as never)
+      vi.mocked(prisma.payout.findMany).mockResolvedValueOnce([payoutTie] as never)
+
+      const page1Res = await GET(req("http://localhost/api/transactions?limit=1"))
+      const page1 = (await page1Res.json()).data
+
+      expect(page1.items).toHaveLength(1)
+      expect(page1.items[0].id).toBe("out_p1")
+      expect(page1.nextCursor).not.toBeNull()
+
+      // Page 2: DB now excludes the already-returned payout (cursor filter
+      // applied), contribution is still there (tie, not yet emitted).
+      vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValueOnce([inboundTie] as never)
+      vi.mocked(prisma.payout.findMany).mockResolvedValueOnce([] as never)
+
+      const page2Res = await GET(
+        req(`http://localhost/api/transactions?limit=1&cursor=${page1.nextCursor}`),
+      )
+      const page2 = (await page2Res.json()).data
+
+      expect(page2.items).toHaveLength(1)
+      expect(page2.items[0].id).toBe("in_t1")
+      expect(page2.nextCursor).toBeNull()
     })
   })
 })

@@ -27,28 +27,34 @@ export async function GET(req: Request) {
   // page yet still have more rows waiting behind the cursor).
   const fetchCount = limit + 1
 
-  // cursor.id is the PREFIXED merged-feed id (e.g. "out_p4"), not a raw
-  // per-table id — InboundTransfer and Payout ids come from independent cuid
-  // sequences, so comparing a raw id from one table against the other's id
-  // column is meaningless and would corrupt the equal-timestamp tiebreak
-  // whenever the page boundary lands on a tie between the two sources.
-  // Deriving the same "in_"/"out_" prefixed string and comparing it against
-  // each row's own prefixed id keeps the per-source filter consistent with
-  // the merge-sort tiebreaker below (same comparator, same total order).
+  // cursor.id is the PREFIXED merged-feed id (e.g. "out_p4" or "in_aaa"), not
+  // a raw per-table id — InboundTransfer and Payout ids are independent cuid
+  // sequences, so a raw id from one table means nothing against the other
+  // table's id column. The merge-sort tiebreaker below orders equal-
+  // timestamp rows by their prefixed id descending, and since "out_" > "in_"
+  // lexically, that means: at a tied timestamp, ALL payouts sort before ALL
+  // contributions. So when resuming from a cursor at a tie:
+  //   - cursor is "out_X"  -> payouts:      still need id < X (raw compare)
+  //                         -> contributions: none were emitted yet, take all
+  //   - cursor is "in_X"   -> contributions: still need id < X (raw compare)
+  //                         -> payouts:      ALL of them already preceded the
+  //                                          cursor in the merge, exclude all
+  const cursorIsPayout = cursor?.id.startsWith("out_") ?? false
+  const cursorIsContribution = cursor?.id.startsWith("in_") ?? false
+  const cursorRawId = cursor ? (cursorIsPayout ? cursor.id.slice(4) : cursor.id.slice(3)) : null
+
   const inboundCursorFilter: Prisma.InboundTransferWhereInput = cursor
     ? {
         OR: [
           { receivedAt: { lt: new Date(cursor.createdAt) } },
-          {
-            receivedAt: new Date(cursor.createdAt),
-            // Only exclude rows whose prefixed id isn't lexically before the
-            // cursor — Prisma can't compare a computed string, so widen to
-            // "id < cursor's raw id" ONLY when the cursor also belongs to
-            // this source; otherwise (cursor belongs to the other source) a
-            // tie is fully excluded/included by prefix ("in_" < "out_"),
-            // handled by the JS post-filter below via mergeKey.
-            id: cursor.id.startsWith("in_") ? { lt: cursor.id.slice(3) } : undefined,
-          },
+          // At the tie timestamp: if the cursor is a contribution, only take
+          // rows with a strictly smaller id (mirrors the merge tiebreak); if
+          // the cursor is a payout, every contribution at that timestamp is
+          // still eligible (none were emitted on the previous page yet), so
+          // include the whole tie with no id restriction.
+          cursorIsContribution
+            ? { receivedAt: new Date(cursor.createdAt), id: { lt: cursorRawId! } }
+            : { receivedAt: new Date(cursor.createdAt) },
         ],
       }
     : {}
@@ -57,10 +63,15 @@ export async function GET(req: Request) {
     ? {
         OR: [
           { createdAt: { lt: new Date(cursor.createdAt) } },
-          {
-            createdAt: new Date(cursor.createdAt),
-            id: cursor.id.startsWith("out_") ? { lt: cursor.id.slice(4) } : undefined,
-          },
+          // Mirror image: if the cursor is a payout, only take rows with a
+          // strictly smaller id. If the cursor is a contribution, every
+          // payout at that timestamp already preceded it in the merge (see
+          // comment above `cursorIsPayout`), so exclude the tie entirely —
+          // expressed as an always-false clause (id in an empty set) rather
+          // than omitting the OR branch, so the `OR` shape stays consistent.
+          cursorIsPayout
+            ? { createdAt: new Date(cursor.createdAt), id: { lt: cursorRawId! } }
+            : { createdAt: new Date(cursor.createdAt), id: { in: [] } },
         ],
       }
     : {}
@@ -117,10 +128,9 @@ export async function GET(req: Request) {
     createdAt: p.createdAt.toISOString(),
   }))
 
-  // Secondary sort by the source-local db id (both `in_<id>`/`out_<id>` are
-  // cuids — fine as a tiebreaker string compare within the merge; the actual
-  // cursor persisted below strips the prefix so it round-trips against the
-  // correct source's `id` column on the next page).
+  // Tiebreak on the prefixed merged-feed id ("in_"/"out_") — this exact
+  // comparator is mirrored by the per-source cursor filters above, which is
+  // what makes the tie-handling correct across a page boundary.
   const merged = [...contributions, ...received].sort((a, b) => {
     if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1
     return a.id < b.id ? 1 : -1
@@ -132,8 +142,9 @@ export async function GET(req: Request) {
   let nextCursor: string | null = null
   if (hasMore && items.length > 0) {
     const last = items[items.length - 1]!
-    const lastId = last.id.startsWith("in_") ? last.id.slice(3) : last.id.slice(4)
-    nextCursor = encodeCursor({ createdAt: last.createdAt, id: lastId })
+    // Keep the prefix in the persisted cursor id — the per-source filters
+    // above need it to know which source's tie-clause to apply.
+    nextCursor = encodeCursor({ createdAt: last.createdAt, id: last.id })
   }
 
   return apiSuccess<TransactionListRes>({ items, nextCursor })
