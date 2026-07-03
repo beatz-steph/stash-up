@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getSessionCookie } from "better-auth/cookies"
 
-const publicRoutes = ["/sign-in"]
+const publicRoutes = ["/login"]
 const publicApiRoutes = ["/api/auth"]
 
 export async function proxy(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function proxy(request: NextRequest) {
     if (isApiRoute) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     } else {
-      return NextResponse.redirect(new URL("/sign-in", request.url))
+      return NextResponse.redirect(new URL("/login", request.url))
     }
   }
 
