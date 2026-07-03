@@ -17,7 +17,7 @@ Suggested execution order (each item = one commit, gate green before commit):
 | 4 | Paginate transactions + notifications | M | low | — |
 | 5 | Realtime-ish updates (notification-driven invalidation) | M | low | 4 |
 | 6 | Circle completion: close or renew | M | medium | — |
-| 7 | Admin reconciliation rework (orphan spool) | L | medium | schema change |
+| 7 | Admin reconciliation rework (orphan spool + replay) | L | high (money-moving) | schema change |
 
 ---
 
@@ -353,45 +353,97 @@ delivery) or hit an unknown VA — true **orphans**.
      `InboundTransfer.nombaTransactionId` exists OR an `OrphanTransaction`
      exists; else insert `OrphanTransaction`. Ignore debits (payouts are
      tracked via `Payout`; reconciling those is out of scope).
-   - **Scheduling:** `vercel.json` currently has NO crons (they were removed —
-     commit `d7708ba` — most likely because Vercel Hobby allows only daily
-     crons / limited count). Re-add:
-     ```json
-     { "crons": [
-       { "path": "/api/cron/orphan-spool", "schedule": "0 */6 * * *" },
-       { "path": "/api/cron/cycle-sweep",  "schedule": "0 6 * * *" }
-     ] }
+   - **Scheduling (DECIDED):** cron triggers run on **Railway cloud
+     functions**, not Vercel crons (`vercel.json` crons were intentionally
+     removed in `d7708ba`; the existing cycle-sweep is already triggered this
+     way). Do NOT re-add `vercel.json` crons. Instead, the new endpoint just
+     needs to exist and validate `CRON_SECRET`; the owner adds a Railway
+     function on a 6-hourly schedule making:
+     ```bash
+     curl -X POST https://www.stashup.xyz/api/cron/orphan-spool \
+       -H "authorization: Bearer $CRON_SECRET"
      ```
-     **Confirm with the owner which Vercel plan is active** — on Hobby, use
-     one daily cron each (`0 6 * * *` / `30 6 * * *`) or an external pinger
-     (GitHub Actions schedule hitting the URL with the secret header).
-     Flag this as a decision point; don't silently pick.
+     (Match the exact auth header convention already used by
+     `apps/web/app/api/cron/cycle-sweep/route.ts` — copy it verbatim.)
+     Include this snippet in the PR description so the Railway function can
+     be created when the endpoint ships.
 3. **Admin API changes** (`apps/admin/app/api/reconciliation/`):
    - `GET route.ts`: change `whereClause` to `matchStatus: "UNMATCHED"` only;
      add a parallel `GET /api/reconciliation/orphans` route (same pagination
      DTO pattern) listing `OrphanTransaction` where `status: "PENDING"`.
    - Resolve endpoints (super-admin, mirror the existing
      `[id]/resolve/route.ts` + `recordAudit` pattern):
-     `POST /api/reconciliation/orphans/[id]/ignore` (status → IGNORED, note
-     required) and `POST /api/reconciliation/orphans/[id]/resolve` — v1 scope:
-     mark RESOLVED with a required `resolutionNote` (money movement/manual
-     credit is handled outside the app). Do NOT build automatic replay into
-     the contribution flow in v1; note it as follow-up.
+     - `POST /api/reconciliation/orphans/[id]/ignore` — status → IGNORED,
+       `resolutionNote` required.
+     - `POST /api/reconciliation/orphans/[id]/resolve` — **replays the orphan
+       into a member's contribution (DECIDED: money-moving, not just a
+       note).** Body: `{ membershipId }` (admin picks the member; if the
+       orphan's `accountRef` maps to a known VA, pre-fill it in the UI).
+       Semantics — mirror the webhook `payment_success` flow exactly:
+       1. Gather context like `apps/web/lib/webhooks/dispatch.ts` does:
+          membership → circle → current cycle → existing contribution.
+       2. Run the pure matcher. **Reuse, don't duplicate:**
+          `apps/web/lib/reconciliation/match.ts` is pure (only type imports
+          from `@workspace/db`). Move it (and its test) to the shared package
+          as `packages/db/reconciliation.ts`, exported via a subpath
+          (`"./reconciliation"` in `packages/db/package.json` `exports`), and
+          leave a re-export shim at the old web path so existing imports and
+          tests keep working. Admin imports
+          `matchInboundTransfer` from `@workspace/db/reconciliation`.
+       3. In one `$transaction` (typed `tx: Prisma.TransactionClient`),
+          apply the result exactly like dispatch.ts steps C–E:
+          - upsert `Contribution` (running total, PARTIAL/COMPLETE),
+          - increment `Membership.bufferMinor` by `amountToBuffer` — this is
+            the "contribution already made → goes to buffer" case: the
+            matcher returns the full amount as buffer when nothing is owed,
+          - increment `Cycle.potCollectedMinor` and flip
+            OPEN/COLLECTING → READY_TO_PAYOUT when the pot completes,
+          - create an `InboundTransfer` with `matchStatus: "MANUAL"`,
+            `providerEventId: "orphan_" + orphan.id` (synthetic — orphans
+            have no webhook event; keeps the unique constraint happy and the
+            replay idempotent), `nombaTransactionId` from the orphan,
+          - set orphan `status: RESOLVED`, `inboundTransferId`,
+            `resolvedById`, `resolvedAt`.
+       4. **No eligible cycle** (circle not ACTIVE, or cycle not
+          OPEN/COLLECTING → matcher returns UNMATCHED): apply the FULL amount
+          to `Membership.bufferMinor` instead, still create the MANUAL
+          `InboundTransfer` (matchedCycleId null) and resolve the orphan —
+          the credit then auto-applies when the next cycle opens (existing
+          `rotation.ts` buffer logic).
+       5. Idempotency: reject with 409 if orphan is not PENDING; the unique
+          `providerEventId`/`nombaTransactionId` backstops double-replay.
+       6. `recordAudit` with before/after including amounts applied to
+          pot vs buffer.
 4. **Admin UI** (`apps/admin/app/(dashboard)/reconciliation/page.tsx`): two
    tabs — "Unmatched webhooks" (existing table, narrowed) and "Orphans
    (spooled)" (new table: Nomba tx id, amount, narration, sender, transaction
-   time, spooled time, actions Resolve/Ignore with note dialog). Follow the
-   existing admin table/component patterns; update
+   time, spooled time). Actions per orphan row:
+   - **Resolve → replay**: dialog with a member picker (search circles →
+     members; pre-select if `accountRef` maps to a VA), a preview line showing
+     where the money will land ("₦X to cycle N pot" / "₦X to member credit" —
+     computed client-side from the circle's current cycle data, labelled as an
+     estimate), and a confirm button. Calls the replay endpoint.
+   - **Ignore**: note dialog → ignore endpoint.
+   Follow the existing admin table/dialog patterns; update
    `apps/admin/lib/api/data/reconciliation.ts` typed wrappers.
 5. **Tests:** spool route (dedup against existing InboundTransfer + existing
-   orphan; credit-only; CRON_SECRET 401), narrowed queue filter, orphan
-   resolve/ignore audit records. Mock the Nomba listing client (msw or vi.mock,
-   matching existing test style in `apps/admin/app/api/reconciliation/*.test.ts`).
+   orphan; credit-only; CRON_SECRET 401), narrowed queue filter, and replay
+   parity scenarios (mirror `apps/web/lib/webhooks/dispatch.test.ts` style):
+   - owes full amount → pot incremented, contribution COMPLETE;
+   - partial owed → split pot/buffer correctly;
+   - already COMPLETE → full amount to `bufferMinor` ("contribution already
+     made → buffer" requirement);
+   - no eligible cycle → full amount to buffer, transfer has null cycle;
+   - non-PENDING orphan → 409; audit rows recorded.
+   Mock the Nomba listing client (vi.mock, matching existing test style in
+   `apps/admin/app/api/reconciliation/*.test.ts`).
 
 **Acceptance:** with a seeded Nomba response containing 1 known + 1 unknown
 credit, spool inserts exactly the unknown one; recon queue shows only
-UNMATCHED + PENDING orphans; resolve/ignore work with audit rows; UNDERPAID/
-OVERPAID transfers no longer appear.
+UNMATCHED + PENDING orphans; replaying an orphan against a member who owes
+money advances the cycle pot (and flips READY_TO_PAYOUT when it completes the
+pot), replaying against a paid-up member lands in `bufferMinor`; audit rows
+recorded; UNDERPAID/OVERPAID transfers no longer appear in the queue.
 
 ---
 
@@ -408,12 +460,16 @@ OVERPAID transfers no longer appear.
   pnpm --filter web test` (plus `--filter admin test` for item 7).
 - Never log PII, tokens, or webhook secrets.
 
-## Open questions for the product owner (ask before items 6–7)
+## Decisions (recorded 2026-07-03 — do not re-ask)
 
-1. **Renew semantics:** same payout order every round, or allow the creator to
-   reshuffle before renewing? (Plan assumes same order; reshuffle is a v2.)
-2. **Vercel plan:** Hobby or Pro? Determines cron cadence for the orphan spool
-   (6-hourly vs daily vs external pinger).
-3. **Orphan resolution v1:** is "mark resolved with a note" enough, or must an
-   orphan be replayable into a member's contribution (money-moving, higher
-   risk)?
+1. **Renew semantics:** same payout order every round. No reshuffle in v1.
+2. **Cron triggers:** Railway cloud functions hit the endpoints with the
+   `CRON_SECRET` header — that's the existing convention (`vercel.json` crons
+   were deliberately removed in `d7708ba`). New spool endpoint follows suit;
+   include the curl snippet in the PR so the owner can add the Railway
+   function.
+3. **Orphan resolution:** replay is REQUIRED — an orphan must be applied to a
+   member's contribution via the standard matching logic; if the contribution
+   is already complete (or there's no eligible cycle), the amount goes to
+   `Membership.bufferMinor` and auto-applies next cycle. See item 7 step 3
+   for the full transactional spec.
