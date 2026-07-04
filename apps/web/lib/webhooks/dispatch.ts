@@ -2,6 +2,12 @@ import { prisma, Prisma } from "@workspace/db";
 import type { WebhookReceipt } from "@workspace/db";
 import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
+import { applyContributionSplit } from "../reconciliation/apply";
+import {
+  isCardSettlement,
+  handleCardSettlement,
+  handleCardFailure,
+} from "./card-settlement";
 import { advanceRotation } from "../payout/rotation";
 import { createNotification } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
@@ -17,6 +23,13 @@ export async function dispatchWebhookEvent(
     case "payment_success": {
       const transaction = payload.data?.transaction;
       if (!transaction) throw new Error("Missing transaction in payment_success");
+
+      // Card settlements (hosted checkout / tokenized-card charges) take a
+      // completely separate path — branch BEFORE the untouched VA logic.
+      if (isCardSettlement(payload)) {
+        await handleCardSettlement(receipt, payload);
+        break;
+      }
 
       const aliasAccountReference = transaction.aliasAccountReference || "";
       const rawAmount = transaction.transactionAmount;
@@ -123,67 +136,20 @@ export async function dispatchWebhookEvent(
           return;
         }
 
-        // C. Upsert Contribution
-        if (matchResult.matchedCycleId && matchResult.matchedMembershipId) {
-          await tx.contribution.upsert({
-            where: {
-              cycleId_membershipId: {
-                cycleId: matchResult.matchedCycleId,
-                membershipId: matchResult.matchedMembershipId,
-              },
-            },
-            update: {
-              amountMinor: matchResult.newContributionAmount,
-              status: matchResult.contributionStatus!,
-            },
-            create: {
-              cycleId: matchResult.matchedCycleId,
-              membershipId: matchResult.matchedMembershipId,
-              amountMinor: matchResult.newContributionAmount,
-              status: matchResult.contributionStatus!,
-            },
-          });
-
-          // D. Update Buffer if OVERPAID
-          if (matchResult.amountToBuffer > 0) {
-            await tx.membership.update({
-              where: { id: matchResult.matchedMembershipId },
-              data: {
-                bufferMinor: { increment: matchResult.amountToBuffer },
-              },
-            });
-          }
-
-          // E. Increment Pot and check Status Flip
-          if (matchResult.amountAppliedToPot > 0) {
-            const updatedCycle = await tx.cycle.update({
-              where: { id: matchResult.matchedCycleId },
-              data: {
-                potCollectedMinor: { increment: matchResult.amountAppliedToPot },
-              },
-            });
-
-            if (
-              updatedCycle.potCollectedMinor >= updatedCycle.potExpectedMinor &&
-              (updatedCycle.status === "OPEN" || updatedCycle.status === "COLLECTING")
-            ) {
-              await tx.cycle.update({
-                where: { id: updatedCycle.id },
-                data: { status: "READY_TO_PAYOUT" },
-              });
-            } else if (
-              updatedCycle.status === "OPEN" &&
-              updatedCycle.potCollectedMinor > 0
-            ) {
-              await tx.cycle.update({
-                where: { id: updatedCycle.id },
-                data: { status: "COLLECTING" },
-              });
-            }
-          }
-        }
+        // C/D/E. Apply the split (contribution + buffer + pot + status flip) —
+        // shared with the card-settlement path so the money logic lives once.
+        await applyContributionSplit(tx, matchResult);
       });
 
+      break;
+    }
+
+    case "payment_failed": {
+      // Only card-order failures are actionable here; VA transfers don't fail
+      // this way. Non-card payment_failed events are a graceful no-op.
+      if (isCardSettlement(payload)) {
+        await handleCardFailure(payload);
+      }
       break;
     }
 

@@ -353,12 +353,16 @@ model ChargeAttempt {
 model InboundTransfer {
   id                  String      @id @default(cuid())
   provider            String      @default("NOMBA")
+  // How the money arrived: "VA_TRANSFER" (bank transfer to a virtual account)
+  // or "CARD" (tokenized card charge / enrollment checkout). Card rows have no
+  // virtualAccount/aliasAccountRef; they correlate via matchedCycle/membership.
+  source              String      @default("VA_TRANSFER")
   // providerEventId = webhook.requestId (top-level) — NOT data.transaction.transactionId
   providerEventId     String
   nombaTransactionId  String               // data.transaction.transactionId
-  aliasAccountRef     String               // data.transaction.aliasAccountReference → VirtualAccount.accountRef
-  virtualAccountId    String
-  virtualAccount      VirtualAccount @relation(fields: [virtualAccountId], references: [id])
+  aliasAccountRef     String?              // data.transaction.aliasAccountReference → VirtualAccount.accountRef (null for CARD)
+  virtualAccountId    String?              // null for CARD
+  virtualAccount      VirtualAccount? @relation(fields: [virtualAccountId], references: [id])
   amountMinor         Int                  // transactionAmount × 100 (stored in kobo)
   currency            String      @default("NGN")
   senderName          String?

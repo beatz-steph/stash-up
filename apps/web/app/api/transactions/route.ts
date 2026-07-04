@@ -86,7 +86,7 @@ export async function GET(req: Request) {
         amountMinor: true,
         matchStatus: true,
         receivedAt: true,
-        matchedCycle: { select: { sequence: true } },
+        matchedCycle: { select: { sequence: true, circle: { select: { id: true, name: true } } } },
         virtualAccount: {
           select: { membership: { select: { circle: { select: { id: true, name: true } } } } },
         },
@@ -110,8 +110,9 @@ export async function GET(req: Request) {
     id: `in_${t.id}`,
     kind: "CONTRIBUTION",
     amountMinor: t.amountMinor,
-    circleId: t.virtualAccount.membership.circle.id,
-    circleName: t.virtualAccount.membership.circle.name,
+    // Card contributions have no VA — fall back to the matched cycle's circle.
+    circleId: t.virtualAccount?.membership.circle.id ?? t.matchedCycle?.circle.id ?? "",
+    circleName: t.virtualAccount?.membership.circle.name ?? t.matchedCycle?.circle.name ?? "",
     cycleSequence: t.matchedCycle?.sequence ?? null,
     status: t.matchStatus,
     createdAt: t.receivedAt.toISOString(),

@@ -299,15 +299,26 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   redirect); Settings "Saved cards" section (list, bindings, remove). Follow
   existing feature/mutation patterns; typed wrappers in `lib/api/data/cards/`.
 
-### Stage 3 — Webhook handling (dispatch.ts)
+### Stage 3 — Webhook handling (dispatch.ts) ✅ IMPLEMENTED
 - **Pre-req (dashboard):** subscribe to `payment_success`, `payment_failed`
   (and `order_success` if it exists) under Developer → Webhook Setup —
   webhooks only fire for subscribed event types.
-- Payload shape and routing discriminator are VERIFIED — see "Card settlement
-  payload" section above (`transaction.type === "online_checkout"` branches
-  BEFORE the untouched VA path). Residual: confirm the `tokenKey` field
-  location with one sandbox tokenizing payment before wiring the enrollment
-  settlement. Route primarily by
+- **CONFIRMED live 2026-07-04 (a real ₦50 tokenizing checkout, ngrok → local).
+  Field map for `payment_success` with `data.transaction.type ===
+  "online_checkout"`:**
+  - `data.tokenizedCardData.tokenKey` — the stored-card credential (NEVER log).
+    Also `.cardType`, `.tokenExpiryYear/Month`, `.cardPan` (masked).
+  - `data.order.orderReference` — OUR reference, echoed back (Nomba's own
+    checkout id is `data.order.orderId`, a UUID — do NOT route on it).
+  - `data.order.orderMetaData` — OUR `{ kind, userId, membershipId?, cycleId?,
+    attemptId }`, echoed back verbatim (Nomba adds `region`). Primary routing key.
+  - `data.order.cardLast4Digits`, `data.order.cardType` — card display metadata.
+  - `data.transaction.transactionId` — Nomba's txn id; captured for the refund
+    (`WEB-ONLINE_C-...`). `data.transaction.transactionAmount` is naira.
+  - Implemented in `lib/webhooks/card-settlement.ts` (branched from dispatch
+    before the VA path); money-apply shared via `lib/reconciliation/apply.ts`;
+    card contributions recorded as `InboundTransfer{ source: "CARD" }`.
+- Route primarily by
   `orderMetaData.kind` (Nomba returns orderMetaData in webhook payloads);
   fall back to `orderReference` prefixes. **In every settlement, capture
   Nomba's transaction id into `ChargeAttempt.nombaTransactionId`** — refunds

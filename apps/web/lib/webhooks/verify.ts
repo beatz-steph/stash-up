@@ -23,6 +23,25 @@ export interface NombaWebhookPayload {
       senderAccountNumber?: string;
       narration?: string;
     };
+    // Present on card settlements (transaction.type === "online_checkout").
+    // tokenKey is the stored-card credential — NEVER log it.
+    tokenizedCardData?: {
+      tokenKey?: string;
+      cardType?: string;
+      tokenExpiryYear?: string;
+      tokenExpiryMonth?: string;
+      cardPan?: string; // masked by Nomba, still card data — do not log
+    };
+    order?: {
+      orderId?: string; // Nomba's internal checkout id
+      orderReference?: string; // OUR reference — echoed back here
+      orderMetaData?: Record<string, string>; // { kind, userId, membershipId?, cycleId?, attemptId }
+      cardType?: string;
+      cardLast4Digits?: string;
+      paymentMethod?: string;
+      amount?: number | string;
+      currency?: string;
+    };
   };
 }
 
