@@ -4,6 +4,10 @@
   "private": true,
   "main": "./index.ts",
   "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./reconciliation": "./reconciliation.ts"
+  },
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev"
