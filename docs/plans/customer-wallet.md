@@ -82,6 +82,21 @@ Per flow:
   + email show "Payout ₦X (₦Y transfer fee)". (Small retrofit to the existing
   payout initiation — its own stage below.)
 
+**⚠️ NET-application rule (money-correctness — non-negotiable):** card
+settlements must apply `transactionAmount − transaction.fee` (NET) to
+pots/wallets, never the gross. Proof from the live ₦50 payment: Nomba kept
+₦0.70; the sub-account received ₦49.30. Once charges are grossed up, applying
+gross would make the matcher treat the fee portion as "overpayment" and credit
+it to the member's buffer — **crediting money we never received** and breaking
+the recon identity. Semantics pinned:
+- `ChargeAttempt.amountMinor` = the NET contribution intended (unchanged).
+- Amount sent to Nomba = `grossUpForCardFee(amountMinor)`.
+- On settlement: `feeMinor` = actual `transaction.fee × 100`; amount applied to
+  pot/wallet = `transactionAmount×100 − feeMinor` (should ≈ `amountMinor`; any
+  small ceil surplus lands in buffer via the matcher as usual).
+- This also fixes a latent pre-wallet bug: the Stage-3 card settlement
+  currently applies gross.
+
 ## Money model & the reconciliation identity
 
 Real sub-account balance must always cover every ledger claim:
@@ -209,8 +224,38 @@ Plus on `VirtualAccount` (make it usable for wallets):
   // add @@index([userId])
 ```
 
+Plus on `Membership` (the opt-in decision, locked 2026-07-04):
+
+```prisma
+  // Opt-in: auto-pay this circle's contribution from the user's wallet balance
+  // (wallet-first, before any bound card). Independent of autoDebitCardId — a
+  // member can be wallet-only, card-only, or both (wallet first, card remainder).
+  autoDebitWallet Boolean @default(false)
+```
+
+`InboundTransfer.source` values pinned: `"VA_TRANSFER"` (default),
+`"CARD"` (card charge applied to a cycle), `"WALLET"` (contribution funded by a
+wallet debit), `"WALLET_TOPUP"` (bank credit into a wallet VA).
+
 `User` gains back-relations: `wallet WalletAccount?`, `walletPin WalletPin?`.
 Migration name: `customer_wallet`.
+
+### Known type-fallout from `VirtualAccount.membershipId` going nullable
+
+Enumerated so implementation doesn't discover them mid-migration:
+1. `apps/web/lib/webhooks/dispatch.ts` — guards `if (virtualAccount)` then uses
+   `.membershipId` as `string`; must become `if (virtualAccount?.membershipId)`
+   AND (first) branch WALLET-kind VAs to the top-up path.
+2. `MatchContext.virtualAccount.membershipId: string`
+   (`packages/db/reconciliation.ts`) — dispatch passes the model object
+   structurally; construct a narrowed `{ id, accountRef, membershipId }` object
+   only when `membershipId` is non-null. Do NOT change the matcher.
+3. `apps/admin/.../orphans/[id]/resolve/route.ts` — `va.membership` becomes
+   nullable; add a guard (orphans only exist for CIRCLE VAs; 409 on null).
+4. `apps/web/app/api/cron/orphan-spool/route.ts` — scans all ACTIVE VAs; must
+   filter `kind: "CIRCLE"` (see orphan-spool note below).
+5. Any VA-provisioning code that sets `membershipId` keeps working (optional
+   accepts a value) — no change.
 
 > **Note on `VirtualAccount.membershipId`:** it is currently required + unique.
 > Making it nullable is a safe widening (existing CIRCLE rows keep their value).
@@ -245,10 +290,22 @@ store the VA with `kind: WALLET, userId`. Idempotent.
 
 ### B. Top-up
 - **Bank:** show the wallet VA's account number (`GET /api/wallet`). A transfer
-  in fires `payment_success` on a `kind: WALLET` VA → credit `TOPUP_BANK`.
-- **Card:** `POST /api/wallet/topup` `{ amountMinor }` → a tokenized/checkout
-  order tagged `orderMetaData.kind = "wallettopup"` (reuses `createCheckoutOrder`
-  / the existing card rails). Settlement → credit `TOPUP_CARD`.
+  in fires `payment_success` on a `kind: WALLET` VA → **create an
+  `InboundTransfer{ source: "WALLET_TOPUP", matchStatus: MATCHED }` row AND
+  credit `TOPUP_BANK`** in one tx (ledger `idempotencyKey =
+  "topup_{inboundTransferId}"`; the InboundTransfer unique on
+  provider+providerEventId is the webhook-level idempotency).
+  **Why the InboundTransfer row is mandatory:** the orphan-spool cron flags any
+  VA credit that has no InboundTransfer row — without it, every wallet top-up
+  becomes a false orphan.
+- **Orphan-spool scope:** the spool (and its admin replay, which assumes a
+  membership) only handles CIRCLE VAs — filter `kind: "CIRCLE"` in the cron.
+  Missed wallet-top-up webhooks are recovered via Nomba's dashboard re-push for
+  v1; a wallet-aware spool is v2.
+- **Card:** `POST /api/wallet/topup` `{ amountMinor }` → a checkout order for
+  `grossUpForCardFee(amountMinor)` tagged `orderMetaData.kind = "wallettopup"`
+  (reuses `createCheckoutOrder` / the existing card rails). Settlement →
+  credit `TOPUP_CARD` with the NET received; fee disclosed pre-checkout.
 
 ### C. Buffer → wallet on circle completion
 In `advanceRotation` (rotation.ts, where the circle is marked `COMPLETED`), for
@@ -264,17 +321,29 @@ attempt `refundStatus = REFUNDED` / `refundedAt`. UI copy: "The ₦50 verificati
 charge has been added to your StashUp wallet." The Stage-4 refund-retry pass
 becomes a no-op for verification (no FAILED refunds to chase).
 
-### E. Spend waterfall (in the card debit sweep)
-Before charging the card, in `POST /api/cron/card-debit-sweep` pass 1:
-1. compute `remainingDue` (unchanged).
-2. **Wallet first:** in a tx, lock the wallet row; `debit = min(remainingDue,
-   balance)`; if `> 0`: DEBIT `CIRCLE_DEBIT`
-   (`idempotencyKey = "cd_{cycleId}_{membershipId}_a{n}"`), create an
-   `InboundTransfer{ source: "WALLET" }` (feed + idempotency), and
-   `applyContributionSplit`. Recompute `remainingDue`.
-3. **Card for the remainder:** if `remainingDue > 0` and a card is bound, the
-   existing card-charge path runs for exactly that remainder.
+### E. Spend waterfall (opt-in, wallet → card)
+Eligibility: sweep pass 1 iterates memberships where **`autoDebitWallet` OR
+`autoDebitCardId` is set** (was card-only). Per member on an OPEN/COLLECTING
+cycle:
+1. compute `remainingDue` (unchanged — THE CORE RULE).
+2. **Wallet first (only if `membership.autoDebitWallet`):** in a tx, lock the
+   wallet row; `debit = min(remainingDue, balance)`; if `> 0`: DEBIT
+   `CIRCLE_DEBIT` (`idempotencyKey = "cd_{cycleId}_{membershipId}_{cuid}"` —
+   per-event, since a cycle can legitimately see multiple wallet debits across
+   sweeps as balance arrives), create an `InboundTransfer{ source: "WALLET" }`,
+   and `applyContributionSplit`. Recompute `remainingDue`.
+3. **Card for the remainder:** if `remainingDue > 0` and an ACTIVE card is
+   bound, the existing card-charge path runs for exactly that remainder
+   (grossed up per the fee policy).
 A member with enough wallet balance is fully collected with zero Nomba calls.
+
+**Same waterfall in the immediate-charge path:** `POST
+/api/circles/[id]/auto-debit` (link-card snappy charge) must run the identical
+wallet-then-card sequence — extract the waterfall into a shared helper
+(`lib/wallet/waterfall.ts` or similar) used by both the sweep and the link
+route, so the logic exists once. Enabling the wallet toggle
+(`PUT /api/circles/[id]/auto-debit` or a body flag on POST) also triggers an
+immediate waterfall run when the member currently owes.
 
 ### F. Withdrawal to bank (PIN-gated, fee-surfaced)
 `POST /api/wallet/withdraw` `{ amountMinor, pin }`. Guards: verified email; a
@@ -329,7 +398,12 @@ credit + FAILED + notify.
 
 ### Stage 1 — Schema + wallet ledger core + fee config
 - Migration `customer_wallet` (all wallet models, `WalletPin`, `VAKind`,
-  `feeMinor` columns on Payout/ChargeAttempt/InboundTransfer); regenerate.
+  `Membership.autoDebitWallet`, `feeMinor` columns on
+  Payout/ChargeAttempt/InboundTransfer); regenerate.
+- Fix the enumerated nullable-`membershipId` type fallout (dispatch guard +
+  narrowed MatchContext + admin resolve guard + orphan-spool CIRCLE filter) in
+  the same commit — the codebase must be gate-green with WALLET VAs possible
+  even before any exist.
 - `lib/wallet/ledger.ts` (shared, `import "server-only"`): `ensureWallet(tx,
   userId)`, `creditWallet(tx, { userId, amountMinor, source, reference,
   idempotencyKey })`, `debitWallet(tx, { userId, amountMinor, source,
@@ -348,12 +422,15 @@ credit + FAILED + notify.
 - Settings "Wallet" card: balance, top-up (bank number + card), withdraw button.
 
 ### Stage 3 — Top-ups (bank VA + card) + webhook routing
-- `VirtualAccount.kind == WALLET` branch in dispatch → `TOPUP_BANK`.
+- `VirtualAccount.kind == WALLET` branch in dispatch (BEFORE the membership
+  lookup) → `InboundTransfer{ source: "WALLET_TOPUP" }` + `TOPUP_BANK` credit
+  in one tx.
 - `POST /api/wallet/topup` (card, grossed-up; fee disclosed pre-checkout) +
-  `wallettopup` settlement branch → `TOPUP_CARD` credit of the intended amount;
+  `wallettopup` settlement branch → `TOPUP_CARD` credit of the NET received;
   record actual `feeMinor` from the webhook.
-- Tests: wallet-VA credit routes to ledger (not the contribution matcher);
-  card top-up credits on settlement; both idempotent.
+- Tests: wallet-VA credit routes to ledger (not the contribution matcher) AND
+  creates the InboundTransfer row (orphan-spool safety); card top-up credits
+  net on settlement; both idempotent on webhook replay.
 
 ### Stage 4 — Buffer→wallet + ₦50→wallet
 - `advanceRotation`: sweep `bufferMinor` → wallet (`BUFFER_SWEEP`) at COMPLETED.
@@ -362,24 +439,36 @@ credit + FAILED + notify.
   and no longer calls the refund API.
 
 ### Stage 5 — Spend waterfall + PIN + withdrawal (money-out; qa-engineer pass)
-- Sweep pass 1: wallet-debit before card (flow E), fully tested against THE CORE
-  RULE (wallet covers part → card charges only the rest; wallet covers all →
-  no card call). Card remainder charges use `grossUpForCardFee`.
+- Shared waterfall helper (flow E) used by BOTH sweep pass 1 and the
+  `/auto-debit` immediate-charge route; sweep eligibility widens to
+  `autoDebitWallet OR autoDebitCardId`. Wallet-toggle endpoint + UI in the
+  Auto-save block. Fully tested against THE CORE RULE (wallet covers part →
+  card charges only the rest; wallet covers all → no card call; toggle off →
+  card-only unchanged).
 - PIN endpoints (flow F2) + `POST /api/wallet/withdraw` (flow F, PIN-gated,
   fee-surfaced) + `payout_*` `walletwd_` branch (flow G) + REVERSAL on failure.
 - Tests: 3-layer safety, overdraw, idempotency, PIN lockout after 5 failures,
   fee debited and recorded.
 - Admin overview: wallet-liabilities line + recon identity.
 
-### Stage 6 — Circle payout fee surfacing (retrofit)
+### Stage 6 — Fee surfacing retrofit (payouts + card NET application)
 - Payout initiation: send `pot − transferFeeMinor(pot)`, store `Payout.feeMinor`.
 - Card contribution charges (enroll + sweep): gross-up via `grossUpForCardFee`;
-  record actual `feeMinor` from settlements onto ChargeAttempt/InboundTransfer.
-- UI + payout email show the fee line. Update existing payout tests.
+  **settlements apply NET (`transactionAmount − transaction.fee`)** per the
+  NET-application rule — this also fixes the latent pre-wallet bug where card
+  settlements apply gross; record `feeMinor` onto ChargeAttempt/InboundTransfer.
+- UI + payout email show the fee line. Update existing payout + card-settlement
+  tests.
+- (May be pulled earlier if card volume grows before wallet ships — it is
+  independent of Stages 2–5.)
 
 ## Resolved questions (2026-07-04)
-1. **Fees:** surfaced everywhere, business absorbs nothing — see Fee policy.
+1. **Fees:** surfaced everywhere, business absorbs nothing — see Fee policy
+   (incl. the NET-application rule).
 2. **Withdrawals:** arbitrary amounts, no caps.
 3. **Security:** transaction PIN required for withdrawals (scrypt, lockout).
 4. **VA naming:** reuse the existing sanitizer for `"StashUp Wallet {name}"`.
+5. **Wallet auto-debit scope:** opt-in per circle
+   (`Membership.autoDebitWallet`, default off) — wallet-first for opted-in
+   members, card handles any remainder; card-only members unchanged.
 ```
