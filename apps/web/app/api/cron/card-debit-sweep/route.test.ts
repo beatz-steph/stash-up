@@ -7,6 +7,7 @@ import {
   refundCheckoutTransaction,
 } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
+import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/nomba-client", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/nomba-client", () => ({
   refundCheckoutTransaction: vi.fn(),
 }));
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
+vi.mock("@/lib/wallet/waterfall", () => ({ collectFromWallet: vi.fn() }));
 vi.mock("@workspace/db", () => ({
   prisma: {
     membership: { findMany: vi.fn() },
@@ -65,6 +67,7 @@ beforeEach(() => {
   routeFindMany({});
   vi.mocked(prisma.chargeAttempt.create).mockResolvedValue({ id: "att1" } as never);
   vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "ok" });
+  vi.mocked(collectFromWallet).mockResolvedValue({ debitedMinor: 0, remainingDueMinor: 0 });
 });
 
 afterEach(() => {
@@ -75,6 +78,40 @@ describe("POST /api/cron/card-debit-sweep — auth", () => {
   it("401 without the CRON secret", async () => {
     const res = await POST(req(""));
     expect(res.status).toBe(401);
+  });
+});
+
+describe("waterfall — wallet first, card for the remainder", () => {
+  it("drains the wallet then charges the card for what's left", async () => {
+    const member = {
+      ...memberWithBoundCard,
+      autoDebitWallet: true,
+    };
+    vi.mocked(prisma.membership.findMany).mockResolvedValue([member] as never);
+    vi.mocked(prisma.cycle.findUnique).mockResolvedValue({ id: "cyc1", status: "COLLECTING" } as never);
+    vi.mocked(prisma.contribution.findUnique).mockResolvedValue({ amountMinor: 0 } as never);
+    // Wallet covers ₦4,000 of the ₦10,000; ₦6,000 remains for the card.
+    vi.mocked(collectFromWallet).mockResolvedValue({ debitedMinor: 400_000, remainingDueMinor: 600_000 });
+
+    const res = await POST(req());
+    const { data } = await res.json();
+    expect(data.walletCollected).toBe(1);
+    expect(data.charged).toBe(1);
+    const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
+    expect(chargeArg.amountMinor).toBe(600_000); // only the remainder
+  });
+
+  it("wallet covers the whole contribution → no card charge", async () => {
+    const member = { ...memberWithBoundCard, autoDebitWallet: true };
+    vi.mocked(prisma.membership.findMany).mockResolvedValue([member] as never);
+    vi.mocked(prisma.cycle.findUnique).mockResolvedValue({ id: "cyc1", status: "COLLECTING" } as never);
+    vi.mocked(prisma.contribution.findUnique).mockResolvedValue({ amountMinor: 0 } as never);
+    vi.mocked(collectFromWallet).mockResolvedValue({ debitedMinor: 1_000_000, remainingDueMinor: 0 });
+
+    const res = await POST(req());
+    const { data } = await res.json();
+    expect(data.walletCollected).toBe(1);
+    expect(chargeTokenizedCard).not.toHaveBeenCalled();
   });
 });
 

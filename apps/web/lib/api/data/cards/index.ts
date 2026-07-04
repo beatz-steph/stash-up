@@ -5,6 +5,8 @@ import type {
   EnrollCardRes,
   LinkAutoDebitReq,
   LinkAutoDebitRes,
+  ToggleWalletAutoDebitReq,
+  ToggleWalletAutoDebitRes,
 } from "@/app/api/cards/dto/cards.dto";
 
 /** The requesting user's saved cards (excludes revoked). */
@@ -32,4 +34,17 @@ export function linkAutoDebit(circleId: string, body: LinkAutoDebitReq, options?
 /** Turn off auto-debit for this circle only. */
 export function unlinkAutoDebit(circleId: string, options?: ApiOptions) {
   return api.del<{ success: boolean }>(`/api/circles/${circleId}/auto-debit`, undefined, options);
+}
+
+/** Opt this circle in/out of wallet auto-save. */
+export function toggleWalletAutoDebit(
+  circleId: string,
+  body: ToggleWalletAutoDebitReq,
+  options?: ApiOptions
+) {
+  return api.post<ToggleWalletAutoDebitRes>(
+    `/api/circles/${circleId}/auto-debit/wallet`,
+    body,
+    options
+  );
 }

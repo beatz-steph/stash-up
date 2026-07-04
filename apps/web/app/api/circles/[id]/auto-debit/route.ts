@@ -9,6 +9,7 @@ import {
   shouldCollectNow,
   chargeOrderRef,
 } from "@/lib/cards/enrollment";
+import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { LinkAutoDebitReqSchema, type LinkAutoDebitRes } from "@/app/api/cards/dto/cards.dto";
 
 /**
@@ -84,7 +85,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   let chargeInitiated = false;
   if (currentCycle) {
     const alreadyPaid = currentCycle.contributions[0]?.amountMinor ?? 0;
-    const remainingDue = computeRemainingDue(circle.contributionMinor, alreadyPaid);
+    let remainingDue = computeRemainingDue(circle.contributionMinor, alreadyPaid);
+
+    // Wallet first (opt-in) — the same waterfall the sweep uses. A wallet that
+    // covers the whole contribution means no card charge at all.
+    if (membership.autoDebitWallet && shouldCollectNow(currentCycle.status, remainingDue)) {
+      try {
+        const res = await collectFromWallet({
+          userId,
+          membershipId: membership.id,
+          cycleId: currentCycle.id,
+          contributionMinor: circle.contributionMinor,
+        });
+        remainingDue = res.remainingDueMinor;
+      } catch (err) {
+        console.error(
+          "[auto-debit] wallet collect failed (card will cover it):",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
 
     // Never double-charge while an attempt is already in flight for this cycle.
     const pending = await prisma.chargeAttempt.findFirst({

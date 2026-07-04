@@ -107,6 +107,8 @@ export const CircleDetailResSchema = z.object({
   myBufferMinor: z.number().int().optional(),
   // The saved card auto-debiting THIS circle for the requesting member (null = off).
   myAutoDebitCardId: z.string().nullable().optional(),
+  // Whether the requesting member opted into wallet auto-save for THIS circle.
+  myAutoDebitWallet: z.boolean().optional(),
 });
 
 export const InviteResSchema = z.object({

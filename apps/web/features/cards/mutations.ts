@@ -5,6 +5,7 @@ import {
   revokeCard,
   linkAutoDebit,
   unlinkAutoDebit,
+  toggleWalletAutoDebit,
 } from "@/lib/api/data/cards"
 import type { EnrollCardReq, LinkAutoDebitReq } from "@/app/api/cards/dto/cards.dto"
 import { CARD_QUERY_KEYS } from "./queries"
@@ -72,6 +73,29 @@ export function useUnlinkAutoDebit(circleId: string) {
     },
     onError: (error) => {
       toast.error(error.message || "Could not turn off auto-save")
+    },
+  })
+}
+
+export function useToggleWalletAutoDebit(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (enabled: boolean) => toggleWalletAutoDebit(circleId, { enabled }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      queryClient.invalidateQueries({ queryKey: ["wallet"] })
+      if (res.autoDebitWallet) {
+        toast.success(
+          res.collectedMinor > 0
+            ? "Wallet auto-save on — collected this cycle from your wallet"
+            : "Wallet auto-save on for this circle"
+        )
+      } else {
+        toast.success("Wallet auto-save off for this circle")
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not update wallet auto-save")
     },
   })
 }

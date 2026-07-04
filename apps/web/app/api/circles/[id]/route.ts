@@ -139,6 +139,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       circle.memberships.find((m) => m.userId === session.user.id)?.bufferMinor ?? 0,
     myAutoDebitCardId:
       circle.memberships.find((m) => m.userId === session.user.id)?.autoDebitCardId ?? null,
+    myAutoDebitWallet:
+      circle.memberships.find((m) => m.userId === session.user.id)?.autoDebitWallet ?? false,
   };
 
   return apiSuccess<CircleDetailRes>(response);

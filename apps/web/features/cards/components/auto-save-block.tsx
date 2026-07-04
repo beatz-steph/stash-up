@@ -10,11 +10,13 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { Button } from "@workspace/ui/components/button"
+import { Switch } from "@workspace/ui/components/switch"
 import { useCards } from "../queries"
 import {
   useEnrollCard,
   useLinkAutoDebit,
   useUnlinkAutoDebit,
+  useToggleWalletAutoDebit,
 } from "../mutations"
 
 function cardLabel(cardType: string | null, last4: string | null): string {
@@ -30,14 +32,17 @@ function cardLabel(cardType: string | null, last4: string | null): string {
 export function AutoSaveBlock({
   circleId,
   autoDebitCardId,
+  autoDebitWallet,
 }: {
   circleId: string
   autoDebitCardId: string | null
+  autoDebitWallet: boolean
 }) {
   const { data: cards, isLoading } = useCards()
   const enroll = useEnrollCard()
   const link = useLinkAutoDebit(circleId)
   const unlink = useUnlinkAutoDebit(circleId)
+  const walletToggle = useToggleWalletAutoDebit(circleId)
   const [selectedCardId, setSelectedCardId] = useState<string>("")
 
   const activeCards = (cards ?? []).filter((c) => c.status === "ACTIVE")
@@ -49,6 +54,23 @@ export function AutoSaveBlock({
       <div className="flex items-center gap-2">
         <Zap className="h-4 w-4 text-su-primary" />
         <h3 className="font-su-sans text-su-body font-semibold text-su-ink">Auto-save</h3>
+      </div>
+
+      {/* Wallet auto-save toggle — pays from wallet balance first, before any card */}
+      <div className="flex items-center justify-between gap-3 rounded-su-lg bg-su-surface-muted px-3 py-2.5">
+        <div>
+          <p className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+            Pay from wallet first
+          </p>
+          <p className="font-su-sans text-su-caption text-su-muted">
+            Use your wallet balance for this circle before charging a card.
+          </p>
+        </div>
+        <Switch
+          checked={autoDebitWallet}
+          disabled={walletToggle.isPending}
+          onCheckedChange={(v) => walletToggle.mutate(v)}
+        />
       </div>
 
       {autoDebitCardId && boundCard ? (

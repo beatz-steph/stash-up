@@ -331,6 +331,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
             <AutoSaveBlock
               circleId={circle.id}
               autoDebitCardId={circle.myAutoDebitCardId ?? null}
+              autoDebitWallet={circle.myAutoDebitWallet ?? false}
             />
           )}
 

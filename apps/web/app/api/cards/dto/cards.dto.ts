@@ -44,3 +44,16 @@ export const LinkAutoDebitResSchema = z.object({
   chargeInitiated: z.boolean(),
 });
 export type LinkAutoDebitRes = z.infer<typeof LinkAutoDebitResSchema>;
+
+/** POST /api/circles/[id]/auto-debit/wallet — opt in/out of wallet auto-save. */
+export const ToggleWalletAutoDebitReqSchema = z.object({
+  enabled: z.boolean(),
+});
+export type ToggleWalletAutoDebitReq = z.infer<typeof ToggleWalletAutoDebitReqSchema>;
+
+export const ToggleWalletAutoDebitResSchema = z.object({
+  autoDebitWallet: z.boolean(),
+  /** amount immediately pulled from the wallet toward this cycle, if any. */
+  collectedMinor: z.number().int(),
+});
+export type ToggleWalletAutoDebitRes = z.infer<typeof ToggleWalletAutoDebitResSchema>;

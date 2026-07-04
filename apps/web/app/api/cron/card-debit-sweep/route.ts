@@ -12,6 +12,7 @@ import {
   computeNextAttempt,
   chargeOrderRef,
 } from "@/lib/cards/enrollment";
+import { collectFromWallet } from "@/lib/wallet/waterfall";
 
 const VERIFY_STALE_MINUTES = 30;
 const MAX_REFUND_RETRIES = 3;
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
 
   const now = Date.now();
   const summary = {
+    walletCollected: 0,
     charged: 0,
     chargeSkipped: 0,
     chargeFailed: 0,
@@ -54,12 +56,19 @@ export async function POST(request: Request) {
     errors: [] as string[],
   };
 
-  // ── Pass 1: CHARGE ─────────────────────────────────────────────────────────
+  // ── Pass 1: COLLECT (wallet → card) ────────────────────────────────────────
+  // Every member who opted into wallet auto-save OR bound a card on an active
+  // circle. Wallet is drained first (free, instant); a bound card covers any
+  // remainder.
   const memberships = await prisma.membership.findMany({
-    where: { autoDebitCardId: { not: null }, autoDebitCard: { status: "ACTIVE" } },
+    where: {
+      circle: { status: "ACTIVE" },
+      OR: [{ autoDebitWallet: true }, { autoDebitCardId: { not: null } }],
+    },
     select: {
       id: true,
       circleId: true,
+      autoDebitWallet: true,
       autoDebitCard: { select: { id: true, tokenKey: true, status: true } },
       circle: {
         select: { id: true, status: true, contributionMinor: true, currentCycleSeq: true },
@@ -70,12 +79,6 @@ export async function POST(request: Request) {
 
   for (const m of memberships) {
     try {
-      const card = m.autoDebitCard;
-      if (!card || card.status !== "ACTIVE" || m.circle.status !== "ACTIVE") {
-        summary.chargeSkipped++;
-        continue;
-      }
-
       const cycle = await prisma.cycle.findUnique({
         where: {
           circleId_sequence: { circleId: m.circleId, sequence: m.circle.currentCycleSeq },
@@ -91,13 +94,39 @@ export async function POST(request: Request) {
         where: { cycleId_membershipId: { cycleId: cycle.id, membershipId: m.id } },
         select: { amountMinor: true },
       });
-      const remainingDue = computeRemainingDue(
+      let remainingDue = computeRemainingDue(
         m.circle.contributionMinor,
         contribution?.amountMinor ?? 0
       );
 
       // THE CORE RULE: paid up (remainingDue 0) or non-collectible cycle → nothing.
       if (!shouldCollectNow(cycle.status, remainingDue)) {
+        summary.chargeSkipped++;
+        continue;
+      }
+
+      // Wallet first (opt-in). Instant ledger move; recomputes remainingDue.
+      if (m.autoDebitWallet) {
+        try {
+          const res = await collectFromWallet({
+            userId: m.user.id,
+            membershipId: m.id,
+            cycleId: cycle.id,
+            contributionMinor: m.circle.contributionMinor,
+          });
+          if (res.debitedMinor > 0) summary.walletCollected++;
+          remainingDue = res.remainingDueMinor;
+        } catch (err) {
+          console.error(
+            `[card-sweep] wallet collect failed membership=${m.id}:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
+
+      // Card for the remainder — only if the member still owes and has a usable card.
+      const card = m.autoDebitCard;
+      if (remainingDue <= 0 || !card || card.status !== "ACTIVE") {
         summary.chargeSkipped++;
         continue;
       }
