@@ -23,11 +23,16 @@ export const metricsResponseSchema = z.object({
   }),
   needsAttention: z.object({
     reconciliationBacklog: z.number(),
+    pendingOrphans: z.number(),
     failedPayouts: z.number(),
     awaitingResolutionCycles: z.number(),
   }),
   financials: z.object({
     totalCollectedMinor: z.number(),
+  }),
+  transactions: z.object({
+    inbound: z.object({ count: z.number(), valueMinor: z.number() }),
+    outbound: z.object({ count: z.number(), valueMinor: z.number() }),
   }),
 })
 

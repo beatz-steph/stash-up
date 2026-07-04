@@ -24,8 +24,11 @@ export async function GET() {
       closedCycles,
       cancelledCycles,
       reconciliationBacklog,
+      pendingOrphans,
       failedPayouts,
       cyclesAggregation,
+      inboundAgg,
+      payoutAgg,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { blockedFromCircles: true } }),
@@ -41,9 +44,19 @@ export async function GET() {
       prisma.cycle.count({ where: { status: "PAID_OUT" } }),
       prisma.cycle.count({ where: { status: "CLOSED" } }),
       prisma.cycle.count({ where: { status: "CANCELLED" } }),
-      prisma.inboundTransfer.count({ where: { matchStatus: { not: "MATCHED" } } }),
+      // Backlog = genuinely unattributable webhooks only (matches the recon
+      // queue). Under/over-payments are auto-handled; MANUAL is resolved.
+      prisma.inboundTransfer.count({ where: { matchStatus: "UNMATCHED" } }),
+      prisma.orphanTransaction.count({ where: { status: "PENDING" } }),
       prisma.payout.count({ where: { status: "FAILED" } }),
       prisma.cycle.aggregate({ _sum: { potCollectedMinor: true } }),
+      // Money in = every recorded inbound transfer; out = successful payouts.
+      prisma.inboundTransfer.aggregate({ _count: { _all: true }, _sum: { amountMinor: true } }),
+      prisma.payout.aggregate({
+        where: { status: "SUCCESS" },
+        _count: { _all: true },
+        _sum: { amountMinor: true },
+      }),
     ])
 
     const totalCollectedMinor = cyclesAggregation._sum.potCollectedMinor ?? 0
@@ -68,11 +81,22 @@ export async function GET() {
       },
       needsAttention: {
         reconciliationBacklog,
+        pendingOrphans,
         failedPayouts,
         awaitingResolutionCycles,
       },
       financials: {
         totalCollectedMinor,
+      },
+      transactions: {
+        inbound: {
+          count: inboundAgg._count._all,
+          valueMinor: inboundAgg._sum.amountMinor ?? 0,
+        },
+        outbound: {
+          count: payoutAgg._count._all,
+          valueMinor: payoutAgg._sum.amountMinor ?? 0,
+        },
       },
     }
 

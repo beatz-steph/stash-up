@@ -3,7 +3,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@workspace/ui/componen
 import { getMetrics } from "@/lib/api/data/metrics"
 import { serverApiOptions } from "@/lib/api/server"
 import { getAdminSession } from "@/lib/session"
-import { AlertTriangle, Clock, Users, CircleDot, RefreshCcw, Wallet } from "lucide-react"
+import {
+  AlertTriangle,
+  Clock,
+  Users,
+  CircleDot,
+  RefreshCcw,
+  Wallet,
+  Inbox,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Scale,
+} from "lucide-react"
 
 function naira(minor: number): string {
   return `₦${(minor / 100).toLocaleString("en-NG")}`
@@ -57,6 +68,13 @@ export default async function DashboardPage() {
       icon: AlertTriangle,
     },
     {
+      label: "Pending orphans",
+      value: metrics.needsAttention.pendingOrphans,
+      hint: "Spooled, awaiting replay",
+      tone: "warn" as const,
+      icon: Inbox,
+    },
+    {
       label: "Failed payouts",
       value: metrics.needsAttention.failedPayouts,
       hint: "Need investigation",
@@ -100,6 +118,32 @@ export default async function DashboardPage() {
     },
   ]
 
+  const { inbound, outbound } = metrics.transactions
+  const netMinor = inbound.valueMinor - outbound.valueMinor
+  const flow = [
+    {
+      label: "Money in",
+      value: naira(inbound.valueMinor),
+      hint: `${inbound.count.toLocaleString()} transfers in`,
+      icon: ArrowDownLeft,
+      color: "text-su-semantic-up",
+    },
+    {
+      label: "Money out",
+      value: naira(outbound.valueMinor),
+      hint: `${outbound.count.toLocaleString()} payouts sent`,
+      icon: ArrowUpRight,
+      color: "text-su-primary",
+    },
+    {
+      label: "Net in accounts",
+      value: naira(netMinor),
+      hint: "Money in minus money out",
+      icon: Scale,
+      color: "text-su-ink",
+    },
+  ]
+
   return (
     <div className="space-y-8">
       <div className="space-y-1">
@@ -110,7 +154,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Needs attention */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {attention.map((item) => {
           const Icon = item.icon
           const isDown = item.tone === "down"
@@ -160,6 +204,35 @@ export default async function DashboardPage() {
             </Card>
           )
         })}
+      </div>
+
+      {/* Transaction flow */}
+      <div className="space-y-3">
+        <h2 className="font-su-sans text-su-body font-semibold text-su-ink">Transaction flow</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {flow.map((item) => {
+            const Icon = item.icon
+            return (
+              <Card
+                key={item.label}
+                className="rounded-su-xl border border-su-hairline bg-su-surface-card shadow-[0_4px_12px_rgba(0,0,0,0.04)]"
+              >
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="font-su-sans text-su-body-sm font-medium text-su-muted">
+                    {item.label}
+                  </CardTitle>
+                  <Icon className={`h-4 w-4 ${item.color}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className={`font-su-sans text-su-title-lg font-bold ${item.color}`}>
+                    {item.value}
+                  </div>
+                  <p className="mt-1 font-su-sans text-su-caption text-su-muted">{item.hint}</p>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
