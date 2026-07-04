@@ -17,8 +17,12 @@ export async function GET(req: Request) {
 
   const { page, limit } = parsed.data
 
+  // Only genuinely unattributable webhooks need manual attention now.
+  // Under/over-payments are handled automatically (partial applies to the
+  // pot; surplus goes to bufferMinor and auto-applies next cycle), and
+  // spooled orphans have their own queue (GET /api/reconciliation/orphans).
   const whereClause: Prisma.InboundTransferWhereInput = {
-    matchStatus: { notIn: [MatchStatus.MATCHED, MatchStatus.MANUAL] },
+    matchStatus: MatchStatus.UNMATCHED,
   }
 
   const [transfers, total] = await Promise.all([

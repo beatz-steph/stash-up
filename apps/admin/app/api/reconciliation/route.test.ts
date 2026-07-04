@@ -60,7 +60,7 @@ describe("GET /api/reconciliation", () => {
 
     expect(prisma.inboundTransfer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { matchStatus: { notIn: ["MATCHED", "MANUAL"] } },
+        where: { matchStatus: "UNMATCHED" },
       })
     )
   })
