@@ -17,6 +17,11 @@ export function vaAccountName(circleName: string): string {
   return sanitize(`StashUp ${circleName}`).slice(0, 60).trim()
 }
 
+/** Holder name for a user's personal wallet top-up virtual account. */
+export function walletAccountName(userName: string): string {
+  return sanitize(`StashUp Wallet ${userName}`).slice(0, 60).trim()
+}
+
 /** Narration on the outbound payout transfer. */
 export function payoutNarration(circleName: string, cycleSequence: number): string {
   return sanitize(`StashUp payout ${circleName} cycle ${cycleSequence}`).slice(0, 100).trim()

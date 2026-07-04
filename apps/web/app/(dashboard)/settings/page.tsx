@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@work
 import { DashboardHeader, PageHeading, PageContent } from "../components/dashboard-header"
 import { UpdateWithdrawalAccountDialog } from "@/features/settings/components/update-withdrawal-account-dialog"
 import { SavedCardsSection } from "@/features/cards/components/saved-cards-section"
+import { WalletCard } from "@/features/wallet/components/wallet-card"
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -87,6 +88,8 @@ export default async function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          <WalletCard />
 
           <div className="lg:col-span-2">
             <SavedCardsSection />
