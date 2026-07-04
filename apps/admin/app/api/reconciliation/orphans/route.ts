@@ -56,15 +56,17 @@ export async function GET(req: Request) {
 
   const response = {
     items: orphans.map((o) => {
+      // Orphans are only spooled for CIRCLE VAs, so membership is present in
+      // practice; fall back defensively for the now-nullable relation.
       const m = o.virtualAccount.membership
       const { virtualAccount: _va, ...rest } = o
       return {
         ...rest,
         member: {
-          membershipId: m.id,
-          name: m.user.name,
-          circleId: m.circle.id,
-          circleName: m.circle.name,
+          membershipId: m?.id ?? "",
+          name: m?.user.name ?? "Unknown",
+          circleId: m?.circle.id ?? "",
+          circleName: m?.circle.name ?? "Unknown",
         },
       }
     }),

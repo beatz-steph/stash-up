@@ -24,6 +24,8 @@ model User {
   withdrawalAccountOtp WithdrawalAccountOtp?
   notifications Notification[]
   savedCards    SavedCard[]
+  wallet        WalletAccount?
+  walletPin     WalletPin?
 
   @@map("user")
 }

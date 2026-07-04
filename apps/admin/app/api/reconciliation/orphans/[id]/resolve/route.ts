@@ -37,6 +37,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const va = orphan.virtualAccount
   const membership = va.membership
+  // Orphans are only ever spooled for CIRCLE VAs (which have a membership).
+  // Guard the now-nullable relation so a WALLET VA can never reach the
+  // contribution-replay path.
+  if (!membership) {
+    return NextResponse.json({ error: "Orphan is not a circle contribution" }, { status: 409 })
+  }
 
   // Build match context from the member's current cycle (mirrors dispatch.ts).
   const circle = await prisma.circle.findUnique({ where: { id: membership.circleId } })
@@ -54,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     : null
 
   const ctx: MatchContext = {
-    virtualAccount: { id: va.id, accountRef: va.accountRef, membershipId: va.membershipId },
+    virtualAccount: { id: va.id, accountRef: va.accountRef, membershipId: membership.id },
     membership: { id: membership.id, circleId: membership.circleId },
     circle: circle
       ? {

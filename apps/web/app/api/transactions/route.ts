@@ -111,8 +111,8 @@ export async function GET(req: Request) {
     kind: "CONTRIBUTION",
     amountMinor: t.amountMinor,
     // Card contributions have no VA — fall back to the matched cycle's circle.
-    circleId: t.virtualAccount?.membership.circle.id ?? t.matchedCycle?.circle.id ?? "",
-    circleName: t.virtualAccount?.membership.circle.name ?? t.matchedCycle?.circle.name ?? "",
+    circleId: t.virtualAccount?.membership?.circle.id ?? t.matchedCycle?.circle.id ?? "",
+    circleName: t.virtualAccount?.membership?.circle.name ?? t.matchedCycle?.circle.name ?? "",
     cycleSequence: t.matchedCycle?.sequence ?? null,
     status: t.matchStatus,
     createdAt: t.receivedAt.toISOString(),

@@ -38,8 +38,11 @@ export async function POST(request: Request) {
   const fromIso = from.toISOString();
   const toIso = to.toISOString();
 
+  // Only CIRCLE VAs: orphans are unattributed CONTRIBUTIONS, and the admin
+  // replay assumes a membership. WALLET VAs (top-ups) are out of scope here —
+  // a missed wallet top-up is recovered via Nomba dashboard re-push (v1).
   const vas = await prisma.virtualAccount.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", kind: "CIRCLE" },
     select: { id: true, bankAccountNumber: true },
   });
 

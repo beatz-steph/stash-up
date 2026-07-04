@@ -45,9 +45,16 @@ export async function dispatchWebhookEvent(
       let cycle = null;
       let existingContribution = null;
 
-      if (virtualAccount) {
+      // WALLET-kind VAs (per-user top-up accounts) have no membership and are
+      // NOT circle contributions — their credits route to the wallet ledger
+      // (Stage 3). Until that lands, only CIRCLE VAs with a membership run the
+      // contribution matcher; anything else is treated as an unknown VA below.
+      const circleMembershipId =
+        virtualAccount && virtualAccount.kind === "CIRCLE" ? virtualAccount.membershipId : null;
+
+      if (virtualAccount && circleMembershipId) {
         membership = await prisma.membership.findUnique({
-          where: { id: virtualAccount.membershipId },
+          where: { id: circleMembershipId },
         });
 
         if (membership) {
@@ -80,7 +87,16 @@ export async function dispatchWebhookEvent(
       }
 
       const ctx: MatchContext = {
-        virtualAccount,
+        // Narrowed to the matcher's shape; null for WALLET / membership-less VAs
+        // (→ matcher returns UNKNOWN_VA and the credit is recorded, not misapplied).
+        virtualAccount:
+          virtualAccount && circleMembershipId
+            ? {
+                id: virtualAccount.id,
+                accountRef: virtualAccount.accountRef,
+                membershipId: circleMembershipId,
+              }
+            : null,
         membership,
         circle,
         cycle,

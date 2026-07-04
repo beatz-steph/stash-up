@@ -140,6 +140,33 @@ enum RefundStatus {
   FAILED       // refund call failed — surfaced for manual follow-up, retried by sweep
 }
 
+enum VAKind {
+  CIRCLE   // per-membership VA — transfers match a cycle contribution
+  WALLET   // per-user VA — transfers credit the wallet balance
+}
+
+enum WalletEntryDirection {
+  CREDIT
+  DEBIT
+}
+
+enum WalletEntrySource {
+  TOPUP_BANK      // inbound transfer to the wallet VA
+  TOPUP_CARD      // tokenized card / checkout top-up
+  BUFFER_SWEEP    // leftover circle buffer at circle completion
+  REFUND_CREDIT   // ₦50 verification hold converted to store credit
+  CIRCLE_DEBIT    // spent on a cycle contribution (waterfall)
+  WITHDRAWAL      // paid out to the bank
+  REVERSAL        // failed withdrawal credited back
+  ADJUSTMENT      // admin correction (audited)
+}
+
+enum WalletWithdrawalStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model Circle {
@@ -204,6 +231,11 @@ model Membership {
   autoDebitCardId String?
   autoDebitCard   SavedCard? @relation(fields: [autoDebitCardId], references: [id])
 
+  // Opt-in: auto-pay this circle's contribution from the user's wallet balance
+  // (wallet-first, before any bound card). Independent of autoDebitCardId — a
+  // member can be wallet-only, card-only, or both (wallet first, card remainder).
+  autoDebitWallet Boolean @default(false)
+
   virtualAccount  VirtualAccount?
   contributions   Contribution[]
   payoutsReceived Payout[]        @relation("RecipientMembership")
@@ -219,8 +251,11 @@ model Membership {
 
 model VirtualAccount {
   id                  String     @id @default(cuid())
-  membershipId        String     @unique
-  membership          Membership @relation(fields: [membershipId], references: [id])
+  // CIRCLE VAs belong to a membership; WALLET VAs belong to a user directly.
+  kind                VAKind     @default(CIRCLE)
+  membershipId        String?    @unique   // null for WALLET VAs
+  membership          Membership? @relation(fields: [membershipId], references: [id])
+  userId              String?               // owner — set for WALLET VAs
   provider            String     @default("NOMBA")
   // accountRef is our reference sent to Nomba at VA creation — webhook lookup key
   accountRef          String     @unique   // = "membership_{membershipId}"
@@ -234,9 +269,11 @@ model VirtualAccount {
 
   inboundTransfers    InboundTransfer[]
   orphanTransactions  OrphanTransaction[]
+  walletAccount       WalletAccount?
 
   @@index([accountRef])
   @@index([bankAccountNumber])
+  @@index([userId])
 }
 
 // A credit spooled from Nomba's virtual-account transaction history that we
@@ -333,6 +370,7 @@ model ChargeAttempt {
   savedCardId    String?              // null until the tokenization webhook creates the card
   purpose        ChargePurpose
   amountMinor    Int                  // remainingDue charged, or 5000 (₦50) for VERIFICATION
+  feeMinor       Int                 @default(0)   // actual card fee from the settlement webhook (transaction.fee) — surfaced, never absorbed
   orderReference String              @unique  // "cardchg_{cycleId}_{membershipId}_a{n}" | "cardenroll_..." | "cardverify_{userId}_{cuid}"
   attemptNumber  Int                  // 1..MAX_ATTEMPTS per (cycle, membership); 0 for enroll/verify
   status         ChargeAttemptStatus @default(PENDING)
@@ -365,6 +403,7 @@ model InboundTransfer {
   virtualAccountId    String?              // null for CARD
   virtualAccount      VirtualAccount? @relation(fields: [virtualAccountId], references: [id])
   amountMinor         Int                  // transactionAmount × 100 (stored in kobo)
+  feeMinor            Int         @default(0)   // provider fee if reported (card settlements carry transaction.fee)
   currency            String      @default("NGN")
   senderName          String?
   senderBank          String?
@@ -390,6 +429,7 @@ model Payout {
   recipientMembershipId  String
   recipientMembership    Membership   @relation("RecipientMembership", fields: [recipientMembershipId], references: [id])
   amountMinor            Int
+  feeMinor               Int          @default(0)   // surfaced Nomba transfer fee (recipient receives amount, pot covered amount + fee)
   // merchantTxRef = "payout_{cycleId}" — deterministic idempotency key sent to Nomba
   merchantTxRef          String       @unique
   nombaTransferId        String?
@@ -494,4 +534,82 @@ model Notification {
   @@index([userId, readAt])
   @@index([userId, createdAt])
   @@map("notification")
+}
+
+// ─── Customer wallet ──────────────────────────────────────────────────────────
+// A per-user spendable balance. Pure ledger over the shared Nomba sub-account —
+// same pattern as circle pots/buffers. Real naira never moves on a wallet
+// credit/debit; only withdrawals move money out (via bank transfer).
+
+model WalletAccount {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  balanceMinor     Int      @default(0)   // ledger; real naira pooled in the sub-account
+  // Dedicated per-user Nomba VA for bank top-ups (lazy — null until provisioned).
+  virtualAccountId String?  @unique
+  virtualAccount   VirtualAccount? @relation(fields: [virtualAccountId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  entries     WalletLedgerEntry[]
+  withdrawals WalletWithdrawal[]
+}
+
+model WalletLedgerEntry {
+  id                String               @id @default(cuid())
+  walletId          String
+  wallet            WalletAccount        @relation(fields: [walletId], references: [id])
+  direction         WalletEntryDirection
+  amountMinor       Int                  // always positive; direction gives the sign
+  balanceAfterMinor Int                  // wallet balance immediately after this entry
+  source            WalletEntrySource
+  // What produced it: circleId/cycleId/inboundTransferId/withdrawalId/chargeAttemptId.
+  reference         String?
+  // Deterministic dedup key so a replayed webhook/sweep never double-posts, e.g.
+  // "topup_{inboundTransferId}", "buffer_{cycleId}_{membershipId}",
+  // "verify_{chargeAttemptId}", "cd_{cycleId}_{membershipId}_a{n}",
+  // "wd_{withdrawalId}", "rev_{withdrawalId}".
+  idempotencyKey    String               @unique
+  createdAt         DateTime             @default(now())
+
+  @@index([walletId, createdAt])
+  @@index([source])
+}
+
+model WalletWithdrawal {
+  id              String                 @id @default(cuid())
+  walletId        String
+  wallet          WalletAccount          @relation(fields: [walletId], references: [id])
+  amountMinor     Int                    // what the user receives
+  feeMinor        Int                    @default(0)   // surfaced transfer fee; wallet debited amount + fee
+  // 3-layer payout safety (mirrors Payout): unique idempotency key to Nomba.
+  merchantTxRef   String                 @unique   // "walletwd_{id}"
+  status          WalletWithdrawalStatus @default(INITIATED)
+  nombaTransferId String?
+  failureReason   String?
+  // Snapshot of the destination bank at request time (WithdrawalAccount can change).
+  bankCode        String
+  bankName        String
+  accountNumber   String
+  accountName     String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([walletId, createdAt])
+  @@index([status])
+}
+
+// Transaction PIN gating wallet withdrawals. Same hardening pattern as
+// WithdrawalAccountOtp: only a hash stored, failed attempts counted, lockout.
+model WalletPin {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash     String    // scrypt(pin, salt) hex — NEVER the plaintext; sha256 is too fast for a 4-6 digit space
+  salt        String    // random 16-byte hex, per user
+  attempts    Int       @default(0)    // consecutive failures; reset on success
+  lockedUntil DateTime?                // set after MAX_PIN_ATTEMPTS failures — lockout window
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
