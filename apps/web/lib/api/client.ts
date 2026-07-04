@@ -63,4 +63,6 @@ export const api = {
     request<T>("GET", path, undefined, options),
   post: <T>(path: string, body?: unknown, options: ApiOptions = {}) =>
     request<T>("POST", path, body, options),
+  del: <T>(path: string, body?: unknown, options: ApiOptions = {}) =>
+    request<T>("DELETE", path, body, options),
 }

@@ -4,6 +4,7 @@ import { useCircleDetail, useVirtualAccount } from "../queries"
 import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { CycleHistory } from "./cycle-history"
+import { AutoSaveBlock } from "@/features/cards/components/auto-save-block"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 import { Loader2, Copy } from "lucide-react"
@@ -324,6 +325,13 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {isActive && (
+            <AutoSaveBlock
+              circleId={circle.id}
+              autoDebitCardId={circle.myAutoDebitCardId ?? null}
+            />
           )}
 
           <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
