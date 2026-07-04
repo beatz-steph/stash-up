@@ -70,7 +70,7 @@ enum ChargeAttemptStatus {
 
 model SavedCard {
   id         String     @id @default(cuid())
-  userId     String     @unique          // v1: one card per user
+  userId     String                       // user-level card LIST — multiple cards per user
   user       User       @relation(fields: [userId], references: [id])
   provider   String     @default("NOMBA")
   tokenKey   String                       // from the tokenization webhook — NEVER log this
@@ -79,6 +79,10 @@ model SavedCard {
   status     CardStatus @default(ACTIVE)
   createdAt  DateTime   @default(now())
   revokedAt  DateTime?
+
+  boundMemberships Membership[]           // circles this card auto-debits for
+
+  @@index([userId])
 }
 
 model ChargeAttempt {
@@ -101,10 +105,32 @@ model ChargeAttempt {
 }
 ```
 
-Plus `Membership.autoDebitEnabled Boolean @default(false)` (per-circle opt-in;
-the card is per-user, the consent is per-membership).
+Plus on `Membership`:
+
+```prisma
+  // Which of the user's saved cards auto-debits for THIS circle.
+  // null = no auto-debit for this circle. Explicit per-circle binding —
+  // saving a card for one circle NEVER enables debiting in another.
+  autoDebitCardId String?
+  autoDebitCard   SavedCard? @relation(fields: [autoDebitCardId], references: [id])
+```
 
 Note `User` and `Cycle`/`Membership` need the back-relation fields added.
+
+### Card ↔ circle binding model (decided — the safety property)
+
+- Cards are a **user-level list** (many per user). Managed in Settings.
+- Auto-debit is a **per-circle binding**: `Membership.autoDebitCardId` points
+  at exactly one card. Only that card is ever charged for that circle.
+- **A new circle never debits any existing card automatically.** The member
+  must explicitly choose: link one of their saved cards, or add a new card.
+- Adding a new card during circle B's enrollment saves it to the list and
+  binds it to circle B only; circle A's binding is untouched.
+- Revoking a card: delete the token at Nomba, set REVOKED, and null out
+  `autoDebitCardId` on every membership bound to it (notify each circle's
+  member context that auto-save is off).
+- A card going EXPIRED disables collection for every circle bound to it —
+  notify per affected circle, prompt to rebind/update.
 
 ## Attempt lifecycle & retry policy
 
@@ -112,7 +138,7 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
   than 24h after attempt 1 failed; attempt 3 no sooner than 72h after
   attempt 2 failed.
 - A new attempt is created only when ALL hold:
-  1. membership `autoDebitEnabled` && user's SavedCard `status == ACTIVE`
+  1. `membership.autoDebitCardId` is set && THAT card's `status == ACTIVE`
   2. cycle status is `OPEN` or `COLLECTING`
   3. `remainingDue > 0` (THE CORE RULE)
   4. no `PENDING` attempt exists for (cycleId, membershipId) — never
@@ -142,21 +168,38 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
   - `verifyCheckoutTransaction(orderReference)` — Verify Transactions endpoint
     (used by the reconcile sweep for stuck PENDING attempts).
 
-### Stage 2 — Enrollment flow (web)
-- `POST /api/cards/enroll` (session-guarded): body `{ circleId }`. Guards:
-  member of circle, cycle OPEN/COLLECTING, `remainingDue > 0` (enrollment
-  charge IS the current contribution — no wasted charge; if remainingDue is 0,
-  reject with "you're paid up — enroll at the start of the next cycle" for
-  v1 simplicity). Creates checkout order with `tokenizeCard: true`,
-  `orderReference = "cardenroll_{cycleId}_{membershipId}"`, stores a PENDING
-  ChargeAttempt (attemptNumber 0 = enrollment), returns the checkout link for
-  redirect.
-- `DELETE /api/cards` — revoke: call Nomba delete, set REVOKED, flip all the
-  user's memberships `autoDebitEnabled = false`.
-- `GET /api/cards` — the user's saved card (last4/brand/status) for Settings.
-- UI: "Auto-save" card in circle detail (enable → redirect to checkout) +
-  Settings section (view card, remove). Follow existing feature/mutation
-  patterns; typed wrappers in `lib/api/data/cards/`.
+### Stage 2 — Enrollment flow (web): two paths per circle
+Enabling auto-save on a circle presents the user's card list + "Add new card".
+
+**Path A — link an existing saved card (no checkout):**
+- `POST /api/circles/[id]/auto-debit` body `{ savedCardId }`. Guards: circle
+  member; card belongs to the requesting user and is ACTIVE. Sets
+  `membership.autoDebitCardId`. If the current cycle is OPEN/COLLECTING and
+  `remainingDue > 0`, immediately create a ChargeAttempt and charge (snappy
+  UX; otherwise the next sweep handles it).
+- `DELETE /api/circles/[id]/auto-debit` — unbind this circle only.
+
+**Path B — add a NEW card (tokenizing checkout):**
+- `POST /api/cards/enroll` body `{ circleId }`. Guards: member of circle,
+  cycle OPEN/COLLECTING, `remainingDue > 0` (the enrollment charge IS the
+  current contribution — no wasted charge; if paid up, reject with "you're
+  paid up — link this card from your card list next cycle, or add it in
+  Settings"). Creates checkout order with `tokenizeCard: true`,
+  `orderReference = "cardenroll_{cycleId}_{membershipId}"`, PENDING
+  ChargeAttempt (attemptNumber 0 = enrollment), returns the checkout link.
+  On webhook settlement: create the SavedCard in the user's list AND bind it
+  to THIS membership only.
+- Optional Settings variant (add a card without a circle): defer to v2 unless
+  trivially cheap — the circle-scoped flow covers the launch need.
+
+**Card management (user-level):**
+- `GET /api/cards` — the user's card list (id/last4/brand/status + which
+  circles each is bound to).
+- `DELETE /api/cards/[id]` — revoke: Nomba token delete, status REVOKED,
+  null `autoDebitCardId` on all bound memberships.
+- UI: "Auto-save" block in circle detail (card picker + add-new → checkout
+  redirect); Settings "Saved cards" section (list, bindings, remove). Follow
+  existing feature/mutation patterns; typed wrappers in `lib/api/data/cards/`.
 
 ### Stage 3 — Webhook handling (dispatch.ts)
 - **First verify the real event name/shape** for checkout + tokenized-card
@@ -189,7 +232,7 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
   others) + **add it to `publicApiRoutes` in `apps/web/proxy.ts`** (the
   orphan-spool 401 taught us this).
 - Logic: for each cycle in OPEN/COLLECTING joined to memberships with
-  `autoDebitEnabled` and an ACTIVE SavedCard: compute `remainingDue`; apply
+  `autoDebitCardId` set and that card ACTIVE: compute `remainingDue`; apply
   the eligibility predicate (section above); create ChargeAttempt (PENDING)
   and call `chargeTokenizedCard` with `amount = remainingDue`. Per-member
   try/catch so one failure doesn't abort the sweep (orphan-spool pattern).
@@ -240,5 +283,10 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
   a completed cycle payment cancels retries; partial payment shrinks the next
   attempt to the remainder.
 - Card rail first (tokenized checkout), bank direct-debit mandates deferred.
-- v1: one saved card per user; per-circle opt-in; enrollment charge doubles as
-  the current cycle's contribution.
+- Cards are a user-level LIST (many per user); auto-debit is an explicit
+  per-circle binding to ONE chosen card (`Membership.autoDebitCardId`). A new
+  circle never debits any card until the member links one. A card added
+  during a circle's enrollment joins the list but binds to that circle only.
+- Enrollment charge (new-card path) doubles as the current cycle's
+  contribution; linking an existing card triggers an immediate charge for the
+  current `remainingDue` when > 0.
