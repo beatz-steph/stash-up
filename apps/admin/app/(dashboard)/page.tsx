@@ -9,7 +9,6 @@ import {
   Users,
   CircleDot,
   RefreshCcw,
-  Wallet,
   Inbox,
   ArrowDownLeft,
   ArrowUpRight,
@@ -109,13 +108,6 @@ export default async function DashboardPage() {
       hint: `${metrics.cycles.readyToPayout} ready for payout`,
       icon: RefreshCcw,
     },
-    {
-      label: "Total collected",
-      value: naira(metrics.financials.totalCollectedMinor),
-      hint: "Platform-wide volume",
-      icon: Wallet,
-      accent: true,
-    },
   ]
 
   const { inbound, outbound } = metrics.transactions
@@ -183,7 +175,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Overview stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((item) => {
           const Icon = item.icon
           return (
@@ -195,7 +187,7 @@ export default async function DashboardPage() {
                 <CardTitle className="font-su-sans text-su-body-sm font-medium text-su-muted">
                   {item.label}
                 </CardTitle>
-                <Icon className={`h-4 w-4 ${item.accent ? "text-su-semantic-up" : "text-su-primary"}`} />
+                <Icon className="h-4 w-4 text-su-primary" />
               </CardHeader>
               <CardContent>
                 <div className="font-su-sans text-su-title-lg font-bold text-su-ink">{item.value}</div>

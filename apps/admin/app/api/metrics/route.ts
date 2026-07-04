@@ -26,7 +26,6 @@ export async function GET() {
       reconciliationBacklog,
       pendingOrphans,
       failedPayouts,
-      cyclesAggregation,
       inboundAgg,
       payoutAgg,
     ] = await Promise.all([
@@ -49,7 +48,6 @@ export async function GET() {
       prisma.inboundTransfer.count({ where: { matchStatus: "UNMATCHED" } }),
       prisma.orphanTransaction.count({ where: { status: "PENDING" } }),
       prisma.payout.count({ where: { status: "FAILED" } }),
-      prisma.cycle.aggregate({ _sum: { potCollectedMinor: true } }),
       // Money in = every recorded inbound transfer; out = successful payouts.
       prisma.inboundTransfer.aggregate({ _count: { _all: true }, _sum: { amountMinor: true } }),
       prisma.payout.aggregate({
@@ -58,8 +56,6 @@ export async function GET() {
         _sum: { amountMinor: true },
       }),
     ])
-
-    const totalCollectedMinor = cyclesAggregation._sum.potCollectedMinor ?? 0
 
     const data = {
       users: { total: totalUsers, blocked: blockedUsers },
@@ -84,9 +80,6 @@ export async function GET() {
         pendingOrphans,
         failedPayouts,
         awaitingResolutionCycles,
-      },
-      financials: {
-        totalCollectedMinor,
       },
       transactions: {
         inbound: {
