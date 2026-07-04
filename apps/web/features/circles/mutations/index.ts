@@ -11,6 +11,7 @@ import {
   activateCircle,
   retryProvisioning,
   triggerPayout,
+  renewCircle,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
@@ -159,6 +160,20 @@ export function useTriggerPayout(circleId: string) {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to initiate payout")
+    },
+  })
+}
+
+export function useRenewCircle(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => renewCircle(circleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      toast.success("Circle renewed — a new rotation has started")
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to renew circle")
     },
   })
 }

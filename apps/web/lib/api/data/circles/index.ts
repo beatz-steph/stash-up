@@ -72,3 +72,7 @@ export function fetchVirtualAccount(id: string, options?: ApiOptions) {
 export function triggerPayout(id: string, cycleId: string, options?: ApiOptions) {
   return api.post<{ initiated: boolean }>(`/api/circles/${id}/cycles/${cycleId}/payout`, undefined, options)
 }
+
+export function renewCircle(id: string, options?: ApiOptions) {
+  return api.post<{ cycleId: string; sequence: number }>(`/api/circles/${id}/renew`, undefined, options)
+}

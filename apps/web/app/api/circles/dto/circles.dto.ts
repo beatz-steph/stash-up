@@ -97,6 +97,7 @@ export const CircleDetailResSchema = z.object({
   totalSlots: z.number().int(),
   startDeadline: z.date().or(z.string()).nullable(),
   createdAt: z.date().or(z.string()),
+  renewalCount: z.number().int(),
   members: z.array(MemberDetailSchema),
   invites: z.array(InviteDetailSchema),
   currentCycle: CycleDetailSchema.nullable().optional(),

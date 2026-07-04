@@ -182,6 +182,74 @@ describe("advanceRotation", () => {
     expect(mockTx.cycle.update).not.toHaveBeenCalled();
   });
 
+  it("renewal round: totalSlots 3, sequence 4 -> recipient position 2 (position math wraps past round 1)", async () => {
+    // Round 1 (seq 1-3) already completed and the circle was renewed, so
+    // sequence keeps growing into round 2 instead of resetting to 1.
+    // currentCycle.sequence=4 is round 2's position 1 (((4-1)%3)+1 = 1)
+    // just paid out; the NEXT cycle (seq 5) goes to round-2 position 2:
+    // nextPos = (4 % 3) + 1 = 2.
+    const mockTx = {
+      circle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "circle-1",
+          totalSlots: 3,
+          contributionMinor: 10000,
+          frequency: "WEEKLY",
+          memberships: [
+            { id: "mem-1", payoutPosition: 1, status: "ACTIVE" },
+            { id: "mem-2", payoutPosition: 2, status: "ACTIVE" },
+            { id: "mem-3", payoutPosition: 3, status: "ACTIVE" },
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      cycle: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "cycle-5" }),
+      },
+    };
+
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 4 });
+
+    expect(mockTx.cycle.create).toHaveBeenCalledWith({
+      data: {
+        circleId: "circle-1",
+        sequence: 5,
+        recipientMembershipId: "mem-2", // payoutPosition 2
+        potExpectedMinor: 30000, // 3 active members
+        deadline: new Date("2026-08-01T00:00:00.000Z"),
+        status: "OPEN",
+      },
+    });
+
+    expect(mockTx.circle.update).toHaveBeenCalledWith({
+      where: { id: "circle-1" },
+      data: { currentCycleSeq: 5 },
+    });
+  })
+
+  it("completes at the end of a round even when sequence is beyond the first round (renewal-aware modulo)", async () => {
+    // Round 2's last position (sequence 6, totalSlots 3: 6 % 3 === 0) should
+    // mark COMPLETED again, exactly like sequence 3 did for round 1 — proves
+    // the completion check isn't hardcoded to `sequence >= totalSlots`.
+    const mockTx = {
+      circle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "circle-1",
+          totalSlots: 3,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 6 });
+
+    expect(mockTx.circle.update).toHaveBeenCalledWith({
+      where: { id: "circle-1" },
+      data: { status: "COMPLETED" },
+    });
+  })
+
   it("returns early if cycle already exists for idempotency", async () => {
     const mockTx = {
       circle: {

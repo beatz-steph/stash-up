@@ -86,6 +86,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     totalSlots: circle.totalSlots,
     startDeadline: circle.startDeadline,
     createdAt: circle.createdAt,
+    renewalCount: circle.renewalCount,
     members: circle.memberships.map((m) => ({
       id: m.id,
       user: m.user,

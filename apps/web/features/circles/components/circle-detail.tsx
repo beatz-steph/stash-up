@@ -1,7 +1,7 @@
 "use client"
 
 import { useCircleDetail, useVirtualAccount } from "../queries"
-import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout } from "../mutations"
+import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { CycleHistory } from "./cycle-history"
 import { authClient } from "@/lib/auth-client"
@@ -61,6 +61,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const { mutate: activateCircle, isPending: isActivating } = useActivateCircle(circleId)
   const { mutate: retryProvisioning, isPending: isRetrying } = useRetryProvisioning(circleId)
   const { mutate: triggerPayout, isPending: isTriggeringPayout } = useTriggerPayout(circleId)
+  const { mutate: renewCircle, isPending: isRenewing } = useRenewCircle(circleId)
   
   const { data: vaData } = useVirtualAccount(circleId)
 
@@ -83,6 +84,8 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const myMembership = circle.members.find((m) => m.user.id === session?.user?.id)
   const isCreator = myMembership?.role === "CREATOR"
   const isForming = circle.status === "FORMING"
+  const isCompleted = circle.status === "COMPLETED"
+  const isActive = circle.status === "ACTIVE"
 
   const activeMembersCount = circle.members.filter(m => m.status === "ACTIVE").length
   const pendingInvitesCount = circle.invites.filter((i) => i.status === "PENDING").length
@@ -112,7 +115,9 @@ export function CircleDetail({ circleId }: { circleId: string }) {
               className={
                 isForming
                   ? "rounded-su-pill bg-su-accent-yellow/10 text-su-accent-yellow"
-                  : "rounded-su-pill bg-su-semantic-up/10 text-su-semantic-up"
+                  : isCompleted
+                    ? "rounded-su-pill bg-su-muted/10 text-su-muted"
+                    : "rounded-su-pill bg-su-semantic-up/10 text-su-semantic-up"
               }
             >
               {circle.status}
@@ -202,7 +207,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left: funding + members + invites */}
         <div className="space-y-6 lg:col-span-2">
-          {!isForming && vaData?.virtualAccount && (
+          {isActive && vaData?.virtualAccount && (
             <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -584,6 +589,50 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                       </Button>
                     )}
                   </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {isCompleted && (
+            <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
+              <CardHeader>
+                <CardTitle className="font-su-sans text-su-title-sm">Rotation complete</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="font-su-sans text-su-caption text-su-muted">
+                  Every member has received a payout for this round.
+                  {circle.renewalCount ? ` This circle has been renewed ${circle.renewalCount} time${circle.renewalCount > 1 ? "s" : ""}.` : ""}
+                </p>
+
+                {isCreator ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button className="w-full rounded-su-pill" disabled={isRenewing}>
+                        {isRenewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Renew circle
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Start another rotation?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Start another full rotation with the same members and amounts? Payout
+                          order stays the same — position 1 collects first.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep it closed</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => renewCircle()}>
+                          Renew circle
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : (
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    This circle is closed. The creator can start another rotation at any time.
+                  </p>
                 )}
               </CardContent>
             </Card>

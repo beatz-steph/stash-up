@@ -121,6 +121,7 @@ model Circle {
   totalSlots          Int                 // fixed at creation, never changes
   startDeadline       DateTime?           // if not full by this date → CANCELLED
   currentCycleSeq     Int                 @default(0)
+  renewalCount        Int                 @default(0) // incremented each time a COMPLETED circle is renewed for another full rotation
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   createdByUserId     String
