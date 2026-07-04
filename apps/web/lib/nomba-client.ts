@@ -442,3 +442,212 @@ export async function listVirtualAccountTransactions(params: {
 
   return rows;
 }
+
+// ─── Card rails (checkout / tokenized charges / refunds) ─────────────────────
+// All amounts cross the Nomba boundary as naira doubles; storage stays kobo.
+
+/** Kobo Int → naira number for the Nomba boundary (e.g. 1000000 → 10000). */
+export function koboToNaira(minor: number): number {
+  return minor / 100;
+}
+
+const CheckoutOrderResponseSchema = z.object({
+  checkoutLink: z.string(),
+  orderReference: z.string(),
+});
+
+/**
+ * Create a hosted-checkout order. When `tokenizeCard` is true we force
+ * `allowedPaymentMethods: ["Card"]` so the customer can only pay by card
+ * (a Transfer/USSD payment would settle the order but tokenize NO card —
+ * a silent enrollment failure). `metadata` is echoed back in webhooks.
+ * Returns `{ checkoutLink, orderReference }` — redirect the member there.
+ */
+export async function createCheckoutOrder(params: {
+  orderReference: string;
+  customerEmail: string;
+  amountMinor: number;
+  callbackUrl: string;
+  tokenizeCard: boolean;
+  metadata?: Record<string, string>;
+}) {
+  const res = await nombaFetch("/v1/checkout/order", {
+    method: "POST",
+    body: JSON.stringify({
+      order: {
+        orderReference: params.orderReference,
+        customerEmail: params.customerEmail,
+        amount: koboToNaira(params.amountMinor),
+        currency: "NGN",
+        callbackUrl: params.callbackUrl,
+        // Card money lands in the same sub-account wallet as VA inflows/payouts.
+        accountId: SUB_ACCOUNT_ID,
+        ...(params.tokenizeCard ? { allowedPaymentMethods: ["Card"] } : {}),
+        ...(params.metadata ? { orderMetaData: params.metadata } : {}),
+      },
+      tokenizeCard: params.tokenizeCard,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Create checkout order failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = CheckoutOrderResponseSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Create checkout order: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+  return parsed.data;
+}
+
+const TokenizedChargeResponseSchema = z.object({
+  status: z.boolean(),
+  message: z.string().optional().default(""),
+});
+
+/**
+ * Charge a previously-tokenized card. Sends `X-Idempotent-key: <orderReference>`
+ * so a network-dropped call can be retried without double-charging. The sync
+ * response is only `{ status, message }` (no transaction id) — treat it as
+ * "accepted", NOT settled; settlement truth comes from the webhook / verify
+ * backstop. NEVER log `tokenKey` (or any PAN data).
+ */
+export async function chargeTokenizedCard(params: {
+  orderReference: string;
+  customerEmail: string;
+  amountMinor: number;
+  tokenKey: string;
+  metadata?: Record<string, string>;
+}) {
+  const res = await nombaFetch("/v1/checkout/tokenized-card-payment", {
+    method: "POST",
+    headers: { "X-Idempotent-key": params.orderReference },
+    body: JSON.stringify({
+      order: {
+        orderReference: params.orderReference,
+        customerEmail: params.customerEmail,
+        amount: koboToNaira(params.amountMinor),
+        currency: "NGN",
+        accountId: SUB_ACCOUNT_ID,
+        ...(params.metadata ? { orderMetaData: params.metadata } : {}),
+      },
+      tokenKey: params.tokenKey,
+    }),
+  });
+
+  if (!res.ok) {
+    // Error body never contains tokenKey — safe to surface.
+    throw new Error(`Tokenized card charge failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = TokenizedChargeResponseSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Tokenized card charge: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+  return parsed.data; // { status, message } — accepted, awaiting settlement
+}
+
+const RefundResponseSchema = z.object({
+  success: z.boolean(),
+  message: z.string().optional().default(""),
+});
+
+/**
+ * Refund a settled checkout transaction to source. Keys on Nomba's
+ * `transactionId` (captured from the settlement webhook/verify) — NOT our
+ * orderReference. Omitting accountNumber/bankCode refunds to the source card.
+ */
+export async function refundCheckoutTransaction(params: {
+  transactionId: string;
+  amountMinor: number;
+}) {
+  const res = await nombaFetch("/v1/checkout/refund", {
+    method: "POST",
+    body: JSON.stringify({
+      transactionId: params.transactionId,
+      amount: koboToNaira(params.amountMinor),
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Checkout refund failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = RefundResponseSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Checkout refund: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+  return parsed.data;
+}
+
+/** Delete a stored card token (user removed the card). NEVER log tokenKey. */
+export async function deleteTokenizedCard(tokenKey: string): Promise<boolean> {
+  const res = await nombaFetch("/v1/checkout/tokenized-card-data", {
+    method: "DELETE",
+    body: JSON.stringify({ tokenKey }),
+  });
+
+  if (!res.ok) {
+    // Error body never contains tokenKey — safe to surface.
+    throw new Error(`Delete tokenized card failed: ${res.status} ${await res.text()}`);
+  }
+  return true;
+}
+
+const CheckoutTransactionSchema = z
+  .object({
+    status: z.string(),
+    // Field name varies by endpoint; capture both and prefer transactionId.
+    transactionId: z.string().nullish(),
+    id: z.string().nullish(),
+  })
+  .passthrough();
+
+/**
+ * Verify a checkout transaction by our orderReference — the reconcile-sweep
+ * backstop for attempts stuck PENDING (webhook missed) and the source of
+ * `nombaTransactionId` for refunds. Settled only when status === "SUCCESS".
+ */
+export async function verifyCheckoutTransaction(orderReference: string): Promise<{
+  settled: boolean;
+  status: string;
+  transactionId: string | null;
+}> {
+  const qs = new URLSearchParams({ orderReference });
+  const res = await nombaFetch(`/v1/transactions/accounts/single?${qs.toString()}`);
+
+  if (!res.ok) {
+    throw new Error(`Verify checkout transaction failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = CheckoutTransactionSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Verify checkout transaction: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+
+  return {
+    settled: parsed.data.status === "SUCCESS",
+    status: parsed.data.status,
+    transactionId: parsed.data.transactionId ?? parsed.data.id ?? null,
+  };
+}

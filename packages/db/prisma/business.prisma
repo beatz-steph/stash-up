@@ -114,6 +114,32 @@ enum NotificationType {
   GENERIC
 }
 
+enum CardStatus {
+  ACTIVE
+  EXPIRED   // charge failed with an expiry/invalid-card reason
+  REVOKED   // user removed the card
+}
+
+enum ChargeAttemptStatus {
+  PENDING     // sent to Nomba, awaiting webhook/verification
+  SUCCESS
+  FAILED
+  SUPERSEDED  // remainingDue hit 0 (or cycle left OPEN/COLLECTING) before this retry ran
+}
+
+enum ChargePurpose {
+  CONTRIBUTION  // sweep/link charge applied to a cycle's pot
+  ENROLLMENT    // new-card checkout that doubled as the contribution
+  VERIFICATION  // ₦50 tokenization charge — refunded after success, never applied to a pot
+}
+
+enum RefundStatus {
+  NOT_APPLICABLE
+  PENDING
+  REFUNDED
+  FAILED       // refund call failed — surfaced for manual follow-up, retried by sweep
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model Circle {
@@ -172,15 +198,23 @@ model Membership {
   defaultCount      Int               @default(0)   // cycles this member has defaulted on
   joinedAt          DateTime          @default(now())
 
+  // Which of the user's saved cards auto-debits for THIS circle.
+  // null = no auto-debit for this circle. Explicit per-circle binding —
+  // saving a card for one circle NEVER enables debiting in another.
+  autoDebitCardId String?
+  autoDebitCard   SavedCard? @relation(fields: [autoDebitCardId], references: [id])
+
   virtualAccount  VirtualAccount?
   contributions   Contribution[]
   payoutsReceived Payout[]        @relation("RecipientMembership")
   recipientCycles Cycle[]         @relation("RecipientMembership")
+  chargeAttempts  ChargeAttempt[]
 
   @@unique([circleId, userId])
   @@unique([circleId, payoutPosition])
   @@index([circleId])
   @@index([userId])
+  @@index([autoDebitCardId])
 }
 
 model VirtualAccount {
@@ -250,6 +284,7 @@ model Cycle {
   contributions         Contribution[]
   payout                Payout?
   inboundTransfers      InboundTransfer[] @relation("MatchedCycle")
+  chargeAttempts        ChargeAttempt[]
 
   @@unique([circleId, sequence])
   @@index([circleId, status])
@@ -268,6 +303,51 @@ model Contribution {
   @@unique([cycleId, membershipId])
   @@index([cycleId])
   @@index([membershipId])
+}
+
+model SavedCard {
+  id         String     @id @default(cuid())
+  userId     String                       // user-level card LIST — multiple cards per user
+  user       User       @relation(fields: [userId], references: [id])
+  provider   String     @default("NOMBA")
+  tokenKey   String                       // from the tokenization webhook — NEVER log this
+  last4      String?
+  cardType   String?
+  status     CardStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  revokedAt  DateTime?
+
+  boundMemberships Membership[]           // circles this card auto-debits for
+
+  @@index([userId])
+}
+
+model ChargeAttempt {
+  id             String              @id @default(cuid())
+  // Nullable: a VERIFICATION charge from Settings has no circle context.
+  cycleId        String?
+  cycle          Cycle?              @relation(fields: [cycleId], references: [id])
+  membershipId   String?
+  membership     Membership?         @relation(fields: [membershipId], references: [id])
+  userId         String               // always known, even without a circle
+  savedCardId    String?              // null until the tokenization webhook creates the card
+  purpose        ChargePurpose
+  amountMinor    Int                  // remainingDue charged, or 5000 (₦50) for VERIFICATION
+  orderReference String              @unique  // "cardchg_{cycleId}_{membershipId}_a{n}" | "cardenroll_..." | "cardverify_{userId}_{cuid}"
+  attemptNumber  Int                  // 1..MAX_ATTEMPTS per (cycle, membership); 0 for enroll/verify
+  status         ChargeAttemptStatus @default(PENDING)
+  failureReason  String?
+  // Nomba's transaction id, captured from the settlement webhook/verify.
+  // REQUIRED for refunds (POST /v1/checkout/refund keys on transactionId).
+  nombaTransactionId String?
+  refundStatus   RefundStatus        @default(NOT_APPLICABLE)
+  refundedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  settledAt      DateTime?
+
+  @@unique([cycleId, membershipId, attemptNumber])
+  @@index([status, createdAt])
+  @@index([refundStatus])
 }
 
 model InboundTransfer {
