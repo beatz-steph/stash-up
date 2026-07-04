@@ -7,21 +7,44 @@ money-in-kobo, `tx: Prisma.TransactionClient` typing, and the gate
 (`pnpm --filter web typecheck && pnpm --filter web lint &&
 pnpm --filter web test`) are non-negotiable.
 
-## Nomba rails (verified against developer.nomba.com)
+## Nomba rails (VERIFIED — full OpenAPI specs reviewed 2026-07-04)
 
-- **Enroll/tokenize:** create a checkout order (`POST /v1/checkout/order`) with
-  `tokenizeCard: true`. Nomba hosts the card form + OTP/3DS (we never touch the
-  PAN — no PCI scope). After payment, the **webhook returns a `tokenKey`**.
-- **Charge later:** `POST /v1/checkout/tokenized-card-payment` with an `order`
-  object (`orderReference`, `customerId`, `amount` — **naira**, `currency:
-  "NGN"`, `accountId`, `callbackUrl`, `customerEmail`) + `tokenKey`.
-- **Manage:** list/update/delete tokenized cards under
-  `/nomba-api-reference/online-checkout/*-tokenized-card-data`.
-- Docs say: "Always verify the transaction after charging a tokenized card"
+All four endpoints use the standard `nombaFetch` auth (bearer +
+parent-`accountId` header) and the `{ code: "00", description, data }`
+envelope. Amounts are **naira doubles** at the boundary (`"10000.00"`);
+internal storage stays kobo.
+
+- **`POST /v1/checkout/order`** — body
+  `{ order: {...}, tokenizeCard: boolean }`. Order required fields:
+  `callbackUrl`, `customerEmail`, `amount`, `currency: "NGN"`. We also set:
+  - `orderReference` (our idempotency ref — optional to Nomba, always set it)
+  - `accountId` = `NOMBA_SUB_ACCOUNT_ID` — "the account where the funds will
+    be deposited"; card money lands in the same sub-account wallet as VA
+    inflows/payouts (confirm in sandbox — open question #6)
+  - **`allowedPaymentMethods: ["Card"]` — REQUIRED for tokenizing orders.**
+    Without it the customer could pay the enrollment checkout via Transfer/
+    USSD and NO card would be tokenized (silent enrollment failure).
+  - `orderMetaData` (string→string map, **returned in webhook payloads**):
+    `{ kind: "cardenroll"|"cardverify", userId, membershipId?, cycleId?, attemptId }`
+    — the primary webhook-routing mechanism (orderReference prefixes stay as
+    fallback).
+  Response `data`: `{ checkoutLink, orderReference }` → redirect the member
+  to `checkoutLink`.
+- **`POST /v1/checkout/tokenized-card-payment`** — body
+  `{ order: {...same shape...}, tokenKey }`. Sync response `data` is only
+  `{ status: boolean, message }` — **no transaction id**; settlement truth
+  comes from the webhook / verify backstop (attempts stay PENDING until then).
+- **`POST /v1/checkout/refund`** — body `{ transactionId (REQUIRED), amount?,
+  accountNumber?, bankCode? }` → `{ success, message }`. **Refunds key on
+  Nomba's `transactionId`, NOT our orderReference** — capture the transaction
+  id from the settlement webhook and store it on the ChargeAttempt, else the
+  ₦50 cannot be refunded. Omit accountNumber/bankCode (refund to source);
+  pass `amount` = the full charge.
+- **`DELETE /v1/checkout/tokenized-card-data`** — body `{ tokenKey }`.
+- Docs: "Always verify the transaction after charging a tokenized card"
   (webhook + Verify Transactions endpoint as backstop).
 - Existing client patterns live in `apps/web/lib/nomba-client.ts`
-  (`nombaFetch` = bearer token + `accountId` header; zod-parse `data`;
-  descriptive errors on unexpected envelopes).
+  (`nombaFetch`; zod-parse `data`; descriptive errors on unexpected envelopes).
 
 ## THE CORE COLLECTION RULE (product decision — implement exactly)
 
@@ -113,6 +136,9 @@ model ChargeAttempt {
   attemptNumber  Int                  // 1..MAX_ATTEMPTS per (cycle, membership); 0 for enroll/verify
   status         ChargeAttemptStatus @default(PENDING)
   failureReason  String?
+  // Nomba's transaction id, captured from the settlement webhook/verify.
+  // REQUIRED for refunds (POST /v1/checkout/refund keys on transactionId).
+  nombaTransactionId String?
   refundStatus   RefundStatus        @default(NOT_APPLICABLE)
   refundedAt     DateTime?
   createdAt      DateTime            @default(now())
@@ -175,21 +201,24 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
 
 ### Stage 1 — Schema + Nomba client
 - Migration above; regenerate client.
-- `nomba-client.ts`:
-  - `createCheckoutOrder({ orderReference, customerId, customerEmail, amountMinor, callbackUrl, tokenizeCard })`
-    → returns the hosted checkout link (`checkoutLink` per docs — verify the
-    exact response field name against
-    `/nomba-api-reference/online-checkout/create-an-online-checkout-order.md`
-    when implementing). Convert kobo → naira at the boundary.
-  - `chargeTokenizedCard({ orderReference, customerId, customerEmail, amountMinor, tokenKey })`
-    → POST `/v1/checkout/tokenized-card-payment`. NEVER log tokenKey.
-  - `deleteTokenizedCard(...)` per the delete-tokenized-card-data endpoint.
+- `nomba-client.ts` (shapes verified — see "Nomba rails" above):
+  - `createCheckoutOrder({ orderReference, customerEmail, amountMinor, callbackUrl, tokenizeCard, metadata })`
+    → POST `/v1/checkout/order` with `order.accountId = SUB_ACCOUNT_ID`,
+    `order.allowedPaymentMethods = ["Card"]` when `tokenizeCard`,
+    `order.orderMetaData = metadata`. Returns `{ checkoutLink, orderReference }`.
+    Kobo → naira at the boundary.
+  - `chargeTokenizedCard({ orderReference, customerEmail, amountMinor, tokenKey, metadata })`
+    → POST `/v1/checkout/tokenized-card-payment` `{ order, tokenKey }`.
+    Sync response is only `{ status, message }` — treat as "accepted", not
+    settled. NEVER log tokenKey.
+  - `refundCheckoutTransaction({ transactionId, amountMinor })`
+    → POST `/v1/checkout/refund` `{ transactionId, amount }` (omit
+    accountNumber/bankCode = refund to source) → `{ success, message }`.
+  - `deleteTokenizedCard(tokenKey)` → DELETE `/v1/checkout/tokenized-card-data`
+    body `{ tokenKey }`.
   - `verifyCheckoutTransaction(orderReference)` — Verify Transactions endpoint
-    (used by the reconcile sweep for stuck PENDING attempts).
-  - `refundCheckoutTransaction(...)` — per
-    `/nomba-api-reference/online-checkout/refund-checkout-transaction.md`
-    (verify exact request fields when implementing: likely orderReference/
-    transaction id + amount). Used to return the ₦50 VERIFICATION charge.
+    (used by the reconcile sweep for stuck PENDING attempts; also the source
+    of `nombaTransactionId` when the webhook missed).
 
 ### Stage 2 — Enrollment flow (web): two paths per circle
 Enabling auto-save on a circle presents the user's card list + "Add new card".
@@ -241,8 +270,11 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
 ### Stage 3 — Webhook handling (dispatch.ts)
 - **First verify the real event name/shape** for checkout + tokenized-card
   payments (docs don't pin it; likely `payment_success` with order fields —
-  inspect a sandbox webhook or the webhook doc page). Route by presence of
-  our `orderReference` prefixes.
+  inspect a sandbox webhook or the webhook doc page). Route primarily by
+  `orderMetaData.kind` (Nomba returns orderMetaData in webhook payloads);
+  fall back to `orderReference` prefixes. **In every settlement, capture
+  Nomba's transaction id into `ChargeAttempt.nombaTransactionId`** — refunds
+  are impossible without it.
 - Enrollment settlement (`cardenroll_*`): extract `tokenKey` (+ card
   last4/type if present) → upsert SavedCard, set membership
   `autoDebitEnabled = true`, mark the enrollment attempt SUCCESS, and apply
@@ -325,11 +357,16 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
 4. Charge fees: who bears Nomba's card MDR — absorb or pass on? (Affects
    whether we charge `remainingDue` or `remainingDue + fee`; v1 assumption:
    absorb, charge exactly `remainingDue`.)
-5. **Refund mechanics:** confirm in sandbox whether
-   refund-checkout-transaction refunds the FULL ₦50 (or nets out fees), how
-   long refunds take to land, and its exact request fields. Also confirm the
-   minimum chargeable amount — if Nomba's floor is above ₦50, bump the
-   verification amount accordingly.
+5. **Refund mechanics (shape now verified; behavior still to test):** request
+   is `{ transactionId, amount }` — confirmed. Still confirm in sandbox:
+   full-₦50 refund vs fee netting, how long refunds take to land, where the
+   webhook/verify payload carries the transactionId, and Nomba's minimum
+   chargeable amount (if the floor is above ₦50, bump the verification
+   amount).
+6. **Sub-account deposit:** we set `order.accountId = NOMBA_SUB_ACCOUNT_ID`
+   so card money lands in the same wallet as VA inflows/payouts — confirm in
+   sandbox that checkout accepts a sub-account id there (fallback: parent
+   account + internal transfer, or the order `splitRequest`).
 
 ## Decisions already made (2026-07-04 — do not re-ask)
 - Attempt amounts are ALWAYS the live remaining balance (core rule above);
