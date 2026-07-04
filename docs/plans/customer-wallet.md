@@ -42,6 +42,45 @@ It removes three existing pain points:
 - **Spend order (waterfall): wallet first, then saved card.** The sweep debits
   the wallet up to the live `remainingDue`, then charges the bound card for any
   remainder.
+- **Fees are ALWAYS surfaced to the user — the business absorbs nothing.**
+  Applies to wallet withdrawals, circle payouts, and card payments. See "Fee
+  policy" below.
+- **Withdrawals: arbitrary amounts, no caps, and require a transaction PIN**
+  (4–6 digits, hashed, attempt-limited with lockout — mirrors the
+  `WithdrawalAccountOtp` hardening pattern).
+
+## Fee policy (locked — surface, never absorb)
+
+Observed ground truth: the live ₦50 card settlement carried
+`data.transaction.fee: 0.7` → **1.4% card fee**. Nomba transfer (payout) fees
+are tiered flat amounts. Config lives in `apps/web/lib/fees.ts` — constants
+overridable by env so real values can be corrected without a deploy:
+
+```ts
+CARD_FEE_RATE = 0.014                       // observed 2026-07-04; env NOMBA_CARD_FEE_RATE
+transferFeeMinor(amountMinor)               // tiered flat fee; env NOMBA_TRANSFER_FEE_* overrides
+grossUpForCardFee(netMinor)                 // ceil(net / (1 − rate)) so net-after-fee ≥ intended
+```
+
+Per flow:
+- **Card contribution / enrollment charges:** charge
+  `grossUpForCardFee(remainingDue)` so the pot still receives the full
+  contribution net of Nomba's cut; the fee delta is shown in the UI before
+  checkout ("₦X + ₦Y card fee") and the actual fee from the settlement webhook
+  (`transaction.fee`) is recorded (`feeMinor` on ChargeAttempt +
+  InboundTransfer) and displayed in feeds.
+- **Card wallet top-up:** same gross-up — user pays `amount + fee`, wallet is
+  credited the intended `amount`; fee disclosed pre-checkout and in the ledger.
+- **Bank-transfer top-ups / VA contributions:** sender pays their own bank's
+  transfer fee; Nomba inbound VA credits carry no observed fee — nothing to
+  surface (re-check if a fee field ever appears on `vact_transfer` webhooks).
+- **Wallet withdrawal:** user asks for `amount`; wallet is debited
+  `amount + transferFeeMinor(amount)`; the fee is shown on the confirm screen
+  and stored on `WalletWithdrawal.feeMinor`.
+- **Circle payout:** amount sent to the recipient becomes
+  `pot − transferFeeMinor(pot)`; `Payout.feeMinor` records it and the payout UI
+  + email show "Payout ₦X (₦Y transfer fee)". (Small retrofit to the existing
+  payout initiation — its own stage below.)
 
 ## Money model & the reconciliation identity
 
@@ -121,7 +160,8 @@ model WalletWithdrawal {
   id             String                 @id @default(cuid())
   walletId       String
   wallet         WalletAccount          @relation(fields: [walletId], references: [id])
-  amountMinor    Int
+  amountMinor    Int                    // what the user receives
+  feeMinor       Int                    @default(0)   // surfaced transfer fee; wallet debited amount + fee
   // 3-layer payout safety (mirrors Payout): unique idempotency key to Nomba.
   merchantTxRef  String                 @unique   // "walletwd_{id}"
   status         WalletWithdrawalStatus @default(INITIATED)
@@ -138,7 +178,27 @@ model WalletWithdrawal {
   @@index([walletId, createdAt])
   @@index([status])
 }
+
+// Transaction PIN gating wallet withdrawals. Same hardening pattern as
+// WithdrawalAccountOtp: only a hash stored, failed attempts counted, lockout.
+model WalletPin {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pinHash     String    // scrypt(pin, salt) — NEVER the plaintext; sha256 is too fast for a 4-6 digit space
+  salt        String
+  attempts    Int       @default(0)    // consecutive failures; reset on success
+  lockedUntil DateTime?                // set after MAX_PIN_ATTEMPTS (5) failures — 15 min lock
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
 ```
+
+Fee-surfacing columns added in the same migration:
+- `Payout.feeMinor Int @default(0)` — circle payout transfer fee.
+- `ChargeAttempt.feeMinor Int @default(0)` — actual card fee from the
+  settlement webhook (`transaction.fee`).
+- `InboundTransfer.feeMinor Int @default(0)` — same, for feed display.
 
 Plus on `VirtualAccount` (make it usable for wallets):
 
@@ -149,8 +209,8 @@ Plus on `VirtualAccount` (make it usable for wallets):
   // add @@index([userId])
 ```
 
-`User` gains back-relations: `wallet WalletAccount?`. Migration name:
-`customer_wallet`.
+`User` gains back-relations: `wallet WalletAccount?`, `walletPin WalletPin?`.
+Migration name: `customer_wallet`.
 
 > **Note on `VirtualAccount.membershipId`:** it is currently required + unique.
 > Making it nullable is a safe widening (existing CIRCLE rows keep their value).
@@ -216,15 +276,32 @@ Before charging the card, in `POST /api/cron/card-debit-sweep` pass 1:
    existing card-charge path runs for exactly that remainder.
 A member with enough wallet balance is fully collected with zero Nomba calls.
 
-### F. Withdrawal to bank
-`POST /api/wallet/withdraw` `{ amountMinor }`. Guards: verified email; a
-`WithdrawalAccount` exists; `amountMinor > 0`. In `$transaction`: lock wallet
-`FOR UPDATE`, assert balance ≥ amount, create `WalletWithdrawal(INITIATED)` with
-a snapshot of the `WithdrawalAccount`, DEBIT `WITHDRAWAL`
+### F. Withdrawal to bank (PIN-gated, fee-surfaced)
+`POST /api/wallet/withdraw` `{ amountMinor, pin }`. Guards: verified email; a
+`WithdrawalAccount` exists; `amountMinor > 0` (arbitrary amounts, no cap); a
+`WalletPin` is set and `pin` verifies (scrypt compare; on failure increment
+`attempts`, lock 15 min after 5 — mirror the OTP lockout; NEVER log the pin).
+Fee: `feeMinor = transferFeeMinor(amountMinor)`, shown on the confirm screen
+(`GET /api/wallet` returns a fee quote helper or the UI computes via a
+`/api/wallet/withdraw/quote` — implementer's call, keep it typed).
+In `$transaction`: lock wallet `FOR UPDATE`, assert balance ≥ amount + fee,
+create `WalletWithdrawal(INITIATED, feeMinor)` with a snapshot of the
+`WithdrawalAccount`, DEBIT `WITHDRAWAL` for `amount + fee`
 (`idempotencyKey = "wd_{id}"`), decrement balance. Then call
-`initiateSubAccountBankTransfer({ ..., merchantTxRef: "walletwd_{id}" })`. On
-synchronous throw → REVERSAL + FAILED. Webhook `payout_success` →
-`WalletWithdrawal SUCCESS`; `payout_failed` → REVERSAL credit + FAILED + notify.
+`initiateSubAccountBankTransfer({ amount, ..., merchantTxRef: "walletwd_{id}" })`.
+On synchronous throw → REVERSAL (credit back `amount + fee`) + FAILED. Webhook
+`payout_success` → `WalletWithdrawal SUCCESS`; `payout_failed` → REVERSAL
+credit + FAILED + notify.
+
+### F2. PIN management
+- `POST /api/wallet/pin` `{ pin }` — first-time set: session + verified email
+  only. `pin` must be 4–6 digits.
+- `PUT /api/wallet/pin` `{ currentPin, newPin }` — change requires the current
+  PIN (locked-out users must wait out the lockout).
+- Hashing: `crypto.scryptSync(pin, salt, 64)` (node built-in — deliberately slow
+  for the tiny 4–6 digit space; sha256 is NOT acceptable here), random 16-byte
+  salt per user, timing-safe compare.
+- Forgot-PIN reset (email OTP) is v2; for now support is manual.
 
 ### G. Webhook routing (dispatch.ts / card-settlement.ts)
 - `payment_success` on a `kind: WALLET` VA → `TOPUP_BANK` credit (branch before
@@ -250,25 +327,31 @@ synchronous throw → REVERSAL + FAILED. Webhook `payout_success` →
 
 ## Implementation stages (each = one commit, gate green)
 
-### Stage 1 — Schema + wallet ledger core
-- Migration `customer_wallet`; regenerate client.
+### Stage 1 — Schema + wallet ledger core + fee config
+- Migration `customer_wallet` (all wallet models, `WalletPin`, `VAKind`,
+  `feeMinor` columns on Payout/ChargeAttempt/InboundTransfer); regenerate.
 - `lib/wallet/ledger.ts` (shared, `import "server-only"`): `ensureWallet(tx,
   userId)`, `creditWallet(tx, { userId, amountMinor, source, reference,
   idempotencyKey })`, `debitWallet(tx, { userId, amountMinor, source,
   reference, idempotencyKey })` — all enforcing invariants 1–3 (lock, ledger
   entry, balance update, overdraw guard, P2002 idempotency no-op).
-- Pure/unit tests for credit/debit/overdraw/idempotency. NO behavior wired yet.
+- `lib/fees.ts`: `CARD_FEE_RATE`, `transferFeeMinor`, `grossUpForCardFee`
+  (env-overridable), unit-tested.
+- Pure/unit tests for credit/debit/overdraw/idempotency + fee math. NO
+  behavior wired yet.
 
 ### Stage 2 — Read API + provisioning + Settings UI
 - `GET /api/wallet` (balance + VA number if provisioned + recent ledger),
   `lib/api/data/wallet/*`, `features/wallet/*` (React Query).
-- Lazy `ensureWalletVirtualAccount` on first bank-top-up view.
+- Lazy `ensureWalletVirtualAccount` on first bank-top-up view (reuse the
+  existing VA name sanitizer — Nomba rejects punctuation).
 - Settings "Wallet" card: balance, top-up (bank number + card), withdraw button.
 
 ### Stage 3 — Top-ups (bank VA + card) + webhook routing
 - `VirtualAccount.kind == WALLET` branch in dispatch → `TOPUP_BANK`.
-- `POST /api/wallet/topup` (card) + `wallettopup` settlement branch →
-  `TOPUP_CARD`.
+- `POST /api/wallet/topup` (card, grossed-up; fee disclosed pre-checkout) +
+  `wallettopup` settlement branch → `TOPUP_CARD` credit of the intended amount;
+  record actual `feeMinor` from the webhook.
 - Tests: wallet-VA credit routes to ledger (not the contribution matcher);
   card top-up credits on settlement; both idempotent.
 
@@ -278,21 +361,25 @@ synchronous throw → REVERSAL + FAILED. Webhook `payout_success` →
 - Tests: completion sweeps buffers exactly once; verification credits the wallet
   and no longer calls the refund API.
 
-### Stage 5 — Spend waterfall + withdrawal (money-out; qa-engineer pass)
+### Stage 5 — Spend waterfall + PIN + withdrawal (money-out; qa-engineer pass)
 - Sweep pass 1: wallet-debit before card (flow E), fully tested against THE CORE
   RULE (wallet covers part → card charges only the rest; wallet covers all →
-  no card call).
-- `POST /api/wallet/withdraw` (flow F) + `payout_*` `walletwd_` branch (flow G)
-  + REVERSAL on failure. 3-layer safety + overdraw + idempotency tests.
+  no card call). Card remainder charges use `grossUpForCardFee`.
+- PIN endpoints (flow F2) + `POST /api/wallet/withdraw` (flow F, PIN-gated,
+  fee-surfaced) + `payout_*` `walletwd_` branch (flow G) + REVERSAL on failure.
+- Tests: 3-layer safety, overdraw, idempotency, PIN lockout after 5 failures,
+  fee debited and recorded.
 - Admin overview: wallet-liabilities line + recon identity.
 
-## Open questions
-1. **Minimum withdrawal / fees?** Does Nomba charge a transfer fee on payouts we
-   should surface or absorb? (Circle payouts already pay it — confirm parity.)
-2. **Wallet VA name collision.** Nomba rejected hyphens/odd chars on VA names
-   before — reuse the existing sanitizer for `"StashUp Wallet {name}"`.
-3. **Withdraw-all vs partial** — allow arbitrary amounts (default) or only
-   full-balance withdrawal for v1?
-4. **KYC/limits** — any per-user wallet balance or withdrawal cap for the
-   hackathon build? (Assume none unless specified.)
+### Stage 6 — Circle payout fee surfacing (retrofit)
+- Payout initiation: send `pot − transferFeeMinor(pot)`, store `Payout.feeMinor`.
+- Card contribution charges (enroll + sweep): gross-up via `grossUpForCardFee`;
+  record actual `feeMinor` from settlements onto ChargeAttempt/InboundTransfer.
+- UI + payout email show the fee line. Update existing payout tests.
+
+## Resolved questions (2026-07-04)
+1. **Fees:** surfaced everywhere, business absorbs nothing — see Fee policy.
+2. **Withdrawals:** arbitrary amounts, no caps.
+3. **Security:** transaction PIN required for withdrawals (scrypt, lockout).
+4. **VA naming:** reuse the existing sanitizer for `"StashUp Wallet {name}"`.
 ```
