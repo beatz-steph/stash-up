@@ -4,11 +4,11 @@ import {
   handleCardSettlement,
 } from "./card-settlement";
 import { prisma } from "@workspace/db";
-import { refundCheckoutTransaction } from "@/lib/nomba-client";
+import { creditWallet } from "@/lib/wallet/ledger";
 import type { NombaWebhookPayload } from "./verify";
 import type { WebhookReceipt } from "@workspace/db";
 
-vi.mock("@/lib/nomba-client", () => ({ refundCheckoutTransaction: vi.fn() }));
+vi.mock("@/lib/wallet/ledger", () => ({ creditWallet: vi.fn() }));
 vi.mock("@/lib/notifications", () => ({ createNotification: vi.fn() }));
 
 // tx mock shared across $transaction invocations
@@ -95,7 +95,7 @@ beforeEach(() => {
     potExpectedMinor: 1_000_000,
     status: "OPEN",
   });
-  vi.mocked(refundCheckoutTransaction).mockResolvedValue({ success: true, message: "ok" });
+  vi.mocked(creditWallet).mockResolvedValue({ applied: true, balanceAfterMinor: 0 });
 });
 
 describe("isCardSettlement", () => {
@@ -112,7 +112,7 @@ describe("isCardSettlement", () => {
 });
 
 describe("handleCardSettlement — verification", () => {
-  it("creates the card, binds the membership, marks SUCCESS, and refunds the ₦50", async () => {
+  it("creates the card, binds the membership, marks SUCCESS, and credits the ₦50 to the wallet", async () => {
     vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
       id: "att1",
       userId: "u1",
@@ -133,13 +133,13 @@ describe("handleCardSettlement — verification", () => {
       data: { autoDebitCardId: "card1" },
     });
     expect(tx.chargeAttempt.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "SUCCESS", refundStatus: "PENDING" }) })
+      expect.objectContaining({ data: expect.objectContaining({ status: "SUCCESS", refundStatus: "REFUNDED" }) })
     );
-    expect(refundCheckoutTransaction).toHaveBeenCalledWith({ transactionId: "TX1", amountMinor: 5000 });
-    expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ refundStatus: "REFUNDED" }) })
+    // ₦50 goes to the wallet (store credit), NEVER to a pot.
+    expect(creditWallet).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ userId: "u1", amountMinor: 5000, source: "REFUND_CREDIT", idempotencyKey: "verify_att1" })
     );
-    // ₦50 is NEVER applied to a pot.
     expect(tx.contribution.upsert).not.toHaveBeenCalled();
   });
 
@@ -157,23 +157,10 @@ describe("handleCardSettlement — verification", () => {
     await handleCardSettlement(receipt, verifyPayload());
     expect(tx.savedCard.create).toHaveBeenCalled();
     expect(tx.membership.update).not.toHaveBeenCalled();
-  });
-
-  it("marks refundStatus FAILED when the refund call throws", async () => {
-    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
-      id: "att1",
-      userId: "u1",
-      membershipId: null,
-      cycleId: null,
-      amountMinor: 5000,
-      status: "PENDING",
-      savedCardId: null,
-    } as never);
-    vi.mocked(refundCheckoutTransaction).mockRejectedValue(new Error("nomba down"));
-
-    await handleCardSettlement(receipt, verifyPayload());
-    expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ refundStatus: "FAILED" }) })
+    // Still credited from the Settings path.
+    expect(creditWallet).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ source: "REFUND_CREDIT", amountMinor: 5000 })
     );
   });
 });

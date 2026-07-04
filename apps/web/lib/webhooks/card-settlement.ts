@@ -3,7 +3,7 @@ import type { WebhookReceipt, ChargeAttempt } from "@workspace/db";
 import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
 import { applyContributionSplit } from "../reconciliation/apply";
-import { refundCheckoutTransaction } from "@/lib/nomba-client";
+import { creditWallet } from "@/lib/wallet/ledger";
 import { handleWalletCardTopup } from "./wallet-topup";
 import { createNotification } from "@/lib/notifications";
 
@@ -94,7 +94,17 @@ export async function handleCardSettlement(
   );
 
   if (kind === "cardverify") {
-    await settleVerification(attempt, { tokenKey, last4, cardType, nombaTxId });
+    const feeMinor = Math.round(Number(transaction?.fee ?? 0) * 100);
+    await settleVerification(attempt, {
+      tokenKey,
+      last4,
+      cardType,
+      nombaTxId,
+      // Credit the NET that actually landed (the fee is surfaced to the customer,
+      // per the fee policy — we never had the fee portion to give back).
+      creditMinor: Math.max(0, amountMinor - feeMinor),
+      feeMinor,
+    });
     return;
   }
 
@@ -112,8 +122,19 @@ export async function handleCardSettlement(
 
 async function settleVerification(
   attempt: ChargeAttempt,
-  card: { tokenKey?: string; last4: string | null; cardType: string | null; nombaTxId: string }
+  card: {
+    tokenKey?: string;
+    last4: string | null;
+    cardType: string | null;
+    nombaTxId: string;
+    creditMinor: number;
+    feeMinor: number;
+  }
 ): Promise<void> {
+  // Nomba's refund API rejects real settled charges in this environment, so the
+  // ₦50 verification hold is returned as wallet store-credit instead (disclosed
+  // to the customer). Everything happens in one tx — card save, mark SUCCESS,
+  // and the wallet credit — so it's atomic and needs no external call.
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     let savedCardId: string | null = null;
     if (card.tokenKey) {
@@ -144,41 +165,31 @@ async function settleVerification(
         status: "SUCCESS",
         savedCardId,
         nombaTransactionId: card.nombaTxId,
+        feeMinor: card.feeMinor,
         settledAt: new Date(),
-        refundStatus: "PENDING",
+        // "REFUNDED" = the hold has been returned (as wallet credit here), so the
+        // sweep's refund-retry never picks it up.
+        refundStatus: "REFUNDED",
+        refundedAt: new Date(),
       },
     });
-  });
 
-  // Refund the verification hold (best-effort, outside the tx). Nomba nets fees
-  // out of the refund — the UI already tells the customer this.
-  if (card.nombaTxId) {
-    try {
-      await refundCheckoutTransaction({
-        transactionId: card.nombaTxId,
-        amountMinor: attempt.amountMinor,
-      });
-      await prisma.chargeAttempt.update({
-        where: { id: attempt.id },
-        data: { refundStatus: "REFUNDED", refundedAt: new Date() },
-      });
-    } catch (err) {
-      console.error(
-        "[card-webhook] verification refund failed (sweep will retry):",
-        err instanceof Error ? err.message : err
-      );
-      await prisma.chargeAttempt.update({
-        where: { id: attempt.id },
-        data: { refundStatus: "FAILED" },
+    if (card.creditMinor > 0) {
+      await creditWallet(tx, {
+        userId: attempt.userId,
+        amountMinor: card.creditMinor,
+        source: "REFUND_CREDIT",
+        reference: attempt.id,
+        idempotencyKey: `verify_${attempt.id}`,
       });
     }
-  }
+  });
 
   await createNotification({
     userId: attempt.userId,
     type: "GENERIC",
     title: "Card added",
-    body: "Your card was saved successfully. The ₦50 verification charge is being refunded.",
+    body: "Your card was saved. The ₦50 verification charge was added to your StashUp wallet.",
   });
 }
 

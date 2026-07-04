@@ -1,5 +1,6 @@
 import { Prisma } from "@workspace/db";
 import { calculateDeadline } from "@/lib/circles/activation";
+import { creditWallet } from "@/lib/wallet/ledger";
 
 type CircleWithMemberships = Prisma.CircleGetPayload<{ include: { memberships: true } }>;
 type CycleRecord = { id: string };
@@ -75,7 +76,7 @@ export async function applyBuffersToNewCycle(
 export async function advanceRotation(
   tx: Prisma.TransactionClient,
   circleId: string,
-  currentCycle: { sequence: number }
+  currentCycle: { id: string; sequence: number }
 ): Promise<void> {
   const circle = await tx.circle.findUnique({
     where: { id: circleId },
@@ -93,6 +94,26 @@ export async function advanceRotation(
       where: { id: circleId },
       data: { status: "COMPLETED" },
     });
+
+    // Sweep any leftover carried-over credit to each member's wallet — the last
+    // cycle of a round has no "next cycle" to auto-apply it to, so without this
+    // it would strand. Keyed on the completing cycle id so a later renewed round
+    // sweeps independently (idempotent within this round).
+    for (const m of circle.memberships) {
+      const buffer = m.bufferMinor ?? 0;
+      if (buffer <= 0) continue;
+      await creditWallet(tx, {
+        userId: m.userId,
+        amountMinor: buffer,
+        source: "BUFFER_SWEEP",
+        reference: circleId,
+        idempotencyKey: `buffer_${currentCycle.id}_${m.id}`,
+      });
+      await tx.membership.update({
+        where: { id: m.id },
+        data: { bufferMinor: 0 },
+      });
+    }
     return;
   }
 

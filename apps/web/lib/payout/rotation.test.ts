@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Prisma } from "@workspace/db";
 import { advanceRotation } from "./rotation";
+import { creditWallet } from "@/lib/wallet/ledger";
 
 vi.mock("@/lib/circles/activation", () => ({
   calculateDeadline: vi.fn(() => new Date("2026-08-01T00:00:00.000Z")),
 }));
+// The ledger is unit-tested separately; here we assert rotation calls it.
+vi.mock("@/lib/wallet/ledger", () => ({ creditWallet: vi.fn() }));
 
 describe("advanceRotation", () => {
   it("marks circle as COMPLETED if it is the last cycle", async () => {
@@ -13,16 +16,52 @@ describe("advanceRotation", () => {
         findUnique: vi.fn().mockResolvedValue({
           id: "circle-1",
           totalSlots: 5,
+          memberships: [],
         }),
         update: vi.fn().mockResolvedValue({}),
       },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 5 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-5", sequence: 5 });
 
     expect(mockTx.circle.update).toHaveBeenCalledWith({
       where: { id: "circle-1" },
       data: { status: "COMPLETED" },
+    });
+  });
+
+  it("sweeps leftover buffers to members' wallets on completion", async () => {
+    vi.mocked(creditWallet).mockResolvedValue({ applied: true, balanceAfterMinor: 0 });
+    const mockTx = {
+      circle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "circle-1",
+          totalSlots: 2,
+          memberships: [
+            { id: "mem-1", userId: "u1", bufferMinor: 300_000 }, // ₦3,000 leftover
+            { id: "mem-2", userId: "u2", bufferMinor: 0 }, // nothing to sweep
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      membership: { update: vi.fn().mockResolvedValue({}) },
+    };
+
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-2", sequence: 2 });
+
+    expect(creditWallet).toHaveBeenCalledTimes(1);
+    expect(creditWallet).toHaveBeenCalledWith(
+      mockTx,
+      expect.objectContaining({
+        userId: "u1",
+        amountMinor: 300_000,
+        source: "BUFFER_SWEEP",
+        idempotencyKey: "buffer_cyc-2_mem-1",
+      })
+    );
+    expect(mockTx.membership.update).toHaveBeenCalledWith({
+      where: { id: "mem-1" },
+      data: { bufferMinor: 0 },
     });
   });
 
@@ -48,7 +87,7 @@ describe("advanceRotation", () => {
       },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 1 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-1", sequence: 1 });
 
     expect(mockTx.cycle.create).toHaveBeenCalledWith({
       data: {
@@ -91,7 +130,7 @@ describe("advanceRotation", () => {
       membership: { update: vi.fn().mockResolvedValue({}) },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 1 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-1", sequence: 1 });
 
     // mem-1 buffer (25000) is capped to one contribution (10000) → COMPLETE
     expect(mockTx.contribution.create).toHaveBeenCalledWith({
@@ -142,7 +181,7 @@ describe("advanceRotation", () => {
       membership: { update: vi.fn().mockResolvedValue({}) },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 1 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-1", sequence: 1 });
 
     // both fully covered (10000 each) → pot 20000 >= expected 20000
     expect(mockTx.cycle.update).toHaveBeenCalledWith({
@@ -175,7 +214,7 @@ describe("advanceRotation", () => {
       membership: { update: vi.fn().mockResolvedValue({}) },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 1 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-1", sequence: 1 });
 
     expect(mockTx.contribution.create).not.toHaveBeenCalled();
     expect(mockTx.membership.update).not.toHaveBeenCalled();
@@ -209,7 +248,7 @@ describe("advanceRotation", () => {
       },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 4 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-4", sequence: 4 });
 
     expect(mockTx.cycle.create).toHaveBeenCalledWith({
       data: {
@@ -237,12 +276,13 @@ describe("advanceRotation", () => {
         findUnique: vi.fn().mockResolvedValue({
           id: "circle-1",
           totalSlots: 3,
+          memberships: [],
         }),
         update: vi.fn().mockResolvedValue({}),
       },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 6 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-6", sequence: 6 });
 
     expect(mockTx.circle.update).toHaveBeenCalledWith({
       where: { id: "circle-1" },
@@ -271,7 +311,7 @@ describe("advanceRotation", () => {
       },
     };
 
-    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { sequence: 1 });
+    await advanceRotation(mockTx as unknown as Prisma.TransactionClient, "circle-1", { id: "cyc-1", sequence: 1 });
 
     expect(mockTx.cycle.create).not.toHaveBeenCalled();
     expect(mockTx.circle.update).not.toHaveBeenCalled();
