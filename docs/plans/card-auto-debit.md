@@ -244,9 +244,11 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
     accountNumber/bankCode = refund to source) → `{ success, message }`.
   - `deleteTokenizedCard(tokenKey)` → DELETE `/v1/checkout/tokenized-card-data`
     body `{ tokenKey }`.
-  - `verifyCheckoutTransaction(orderReference)` — Verify Transactions endpoint
-    (used by the reconcile sweep for stuck PENDING attempts; also the source
-    of `nombaTransactionId` when the webhook missed).
+  - `verifyCheckoutTransaction(orderReference)` —
+    `GET /v1/transactions/accounts/single?orderReference=<ref>` (endpoint
+    verified; also accepts `transactionRef`). Used by the reconcile sweep for
+    stuck PENDING attempts and as the source of `nombaTransactionId` when the
+    webhook missed. Treat settled only when `data.status === "SUCCESS"`.
 
 ### Stage 2 — Enrollment flow (web): two paths per circle
 Enabling auto-save on a circle presents the user's card list + "Add new card".
@@ -301,14 +303,11 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
 - **Pre-req (dashboard):** subscribe to `payment_success`, `payment_failed`
   (and `order_success` if it exists) under Developer → Webhook Setup —
   webhooks only fire for subscribed event types.
-- **First capture the real card-settlement payload in sandbox** (open
-  question #1: where tokenKey/orderMetaData/transactionId sit for card
-  payments — the docs' payment_success sample is a VA transfer, and card
-  charges land under the SAME event type our VA flow consumes; the dispatch
-  routing must cleanly separate card-checkout settlements from VA transfers,
-  e.g. by `transaction.type`/`aliasAccountType` absence + orderMetaData
-  presence, WITHOUT disturbing the existing payment_success VA path). Route
-  primarily by
+- Payload shape and routing discriminator are VERIFIED — see "Card settlement
+  payload" section above (`transaction.type === "online_checkout"` branches
+  BEFORE the untouched VA path). Residual: confirm the `tokenKey` field
+  location with one sandbox tokenizing payment before wiring the enrollment
+  settlement. Route primarily by
   `orderMetaData.kind` (Nomba returns orderMetaData in webhook payloads);
   fall back to `orderReference` prefixes. **In every settlement, capture
   Nomba's transaction id into `ChargeAttempt.nombaTransactionId`** — refunds
@@ -384,14 +383,61 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   one click. Persist consent timestamp (SavedCard.createdAt suffices for v1).
 - All amounts kobo `Int` internally; naira only at the Nomba boundary.
 
-## Open questions (only ONE remains)
-1. **Stage 3:** the exact `payment_success` payload shape for a CARD/checkout
-   settlement — specifically WHERE `tokenKey`, `orderReference`/
-   `orderMetaData`, and `transactionId` sit in `data.transaction` for card
-   payments (the doc's sample is a VA transfer). Capture one real event in
-   sandbox before wiring dispatch. Also confirm on the dashboard whether a
-   separate order/checkout event type exists (`order_success` appears in the
-   replay API's enum) and subscribe to whatever fires for checkout.
+## Card settlement payload (VERIFIED — "Accept online payments" guide)
+
+Checkout settlements fire `payment_success` with a distinct shape from VA
+transfers:
+
+```json
+{
+  "event_type": "payment_success",
+  "requestId": "...",
+  "data": {
+    "transaction": {
+      "transactionId": "WEB-ONLINE_C-...",   // → ChargeAttempt.nombaTransactionId (refund key)
+      "type": "online_checkout",              // ← discriminator vs "vact_transfer"
+      "transactionAmount": 2400.0,            // naira
+      "fee": 93.6,
+      "time": "2024-01-11T16:33:04Z"
+    },
+    "order": {                                 // ← VA transfers have NO data.order
+      "orderReference": "your-unique-order-ref",
+      "amount": 2400.0,
+      "currency": "NGN",
+      "paymentMethod": "card_payment",        // or "bank_transfer" (checkout paid by transfer)
+      "cardType": "Visa",                     // → SavedCard.cardType
+      "cardLast4Digits": "8038"               // → SavedCard.last4
+    }
+  }
+}
+```
+
+**Dispatch routing (now fully specified):** branch on
+`data.transaction.type === "online_checkout"` (equivalently: `data.order`
+present) BEFORE the existing VA-transfer path — the VA path continues to
+handle `vact_transfer` events untouched. Look up our ChargeAttempt by
+`data.order.orderReference`. Belt-and-braces: assert
+`order.paymentMethod === "card_payment"` on tokenizing orders (we pin
+`allowedPaymentMethods: ["Card"]`, but if a non-card payment ever arrives on
+an enrollment order, settle the money and flag that no card was tokenized).
+
+**Verify backstop (endpoint pinned):**
+`GET /v1/transactions/accounts/single?transactionRef=<id>` — or
+`?orderReference=<ref>`, which is better for us (we always know our own ref,
+even when the webhook that carries the transactionId never arrived). Check
+`data.status === "SUCCESS"`.
+
+**Signature note:** card samples show no `data.merchant` object; the
+signature hash uses merchant.userId/walletId — confirm `verify.ts` treats
+missing fields as `""` (the reference implementations all do `?? ""`).
+
+## Open questions (residual — confirm with ONE sandbox event)
+1. The exact field name/location of **`tokenKey`** in the webhook for a
+   `tokenizeCard: true` order (the recurring-payments guide says it's
+   "returned from the webhook"; the samples above are non-tokenizing so it
+   doesn't appear — most likely inside `data.order`). Also confirm
+   `orderMetaData` echo location. One sandbox tokenizing payment answers
+   both; do this at the START of Stage 3.
 
 ## Answered (2026-07-04 — do not re-ask)
 - **Refunds net out processing fees** → we inform the customer in the UI
