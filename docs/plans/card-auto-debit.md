@@ -46,6 +46,32 @@ internal storage stays kobo.
 - Existing client patterns live in `apps/web/lib/nomba-client.ts`
   (`nombaFetch`; zod-parse `data`; descriptive errors on unexpected envelopes).
 
+### Webhook facts (from the official webhooks doc, reviewed 2026-07-04)
+
+- Supported events: `payment_success` (covers **card transactions**, VA
+  payments, PayByTransfer), `payment_failed`, `payment_reversal`,
+  `payout_success`, `payout_failed`, `payout_refund`. The replay API also
+  lists `ORDER_SUCCESS` — check the dashboard for an order/checkout event and
+  **subscribe to every event type we consume** (webhooks only fire for
+  subscribed events; likely needed here: payment_success, payment_failed,
+  and order_success if present).
+- Signature scheme confirmed = exactly what `lib/webhooks/verify.ts` already
+  implements (colon-joined `event_type:requestId:userId:walletId:
+  transactionId:type:time:responseCode:nomba-timestamp`, HmacSHA256 Base64).
+  No changes needed.
+- **Nomba retries failed webhooks 5 times over ~95 minutes** (2m/5m/11m/24m/
+  53m backoff). Our 30-min verify backstop may settle an attempt before a
+  late retry arrives — fine, everything is idempotent (WebhookReceipt dedup +
+  attempt status guards).
+- Nomba supports an **`X-Idempotent-key` request header**. Send it on
+  `chargeTokenizedCard` (use the orderReference) so a network-dropped charge
+  call can be retried without double-charging.
+- **Ops backstop:** Nomba exposes webhook event-logs, re-push, bulk re-push,
+  and replay APIs (`/v1/webhooks/event-logs|re-push|bulk-re-push|replay`) and
+  a dashboard "Webhook Repush" page — if a settlement webhook goes missing,
+  it can be re-delivered rather than reconciled by hand. Worth wiring into
+  admin tooling later (v2); for now document in the runbook.
+
 ## THE CORE COLLECTION RULE (product decision — implement exactly)
 
 **Every charge attempt is computed from the member's live remaining balance at
@@ -208,9 +234,11 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
     `order.orderMetaData = metadata`. Returns `{ checkoutLink, orderReference }`.
     Kobo → naira at the boundary.
   - `chargeTokenizedCard({ orderReference, customerEmail, amountMinor, tokenKey, metadata })`
-    → POST `/v1/checkout/tokenized-card-payment` `{ order, tokenKey }`.
-    Sync response is only `{ status, message }` — treat as "accepted", not
-    settled. NEVER log tokenKey.
+    → POST `/v1/checkout/tokenized-card-payment` `{ order, tokenKey }` with
+    header `X-Idempotent-key: <orderReference>` (Nomba-supported — protects a
+    network-dropped call from double-charging on retry). Sync response is
+    only `{ status, message }` — treat as "accepted", not settled. NEVER log
+    tokenKey.
   - `refundCheckoutTransaction({ transactionId, amountMinor })`
     → POST `/v1/checkout/refund` `{ transactionId, amount }` (omit
     accountNumber/bankCode = refund to source) → `{ success, message }`.
@@ -256,7 +284,9 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   settlement: SavedCard created (bound to nothing — user links it to circles
   later), refund triggered.
 - UI copy must say: "We'll charge ₦50 to verify your card and refund it
-  immediately after."
+  right after. Processing fees may be deducted from the refund." (DECIDED:
+  Nomba nets fees out of refunds — we tell the customer up front rather than
+  absorbing/topping up.)
 
 **Card management (user-level):**
 - `GET /api/cards` — the user's card list (id/last4/brand/status + which
@@ -268,9 +298,17 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   existing feature/mutation patterns; typed wrappers in `lib/api/data/cards/`.
 
 ### Stage 3 — Webhook handling (dispatch.ts)
-- **First verify the real event name/shape** for checkout + tokenized-card
-  payments (docs don't pin it; likely `payment_success` with order fields —
-  inspect a sandbox webhook or the webhook doc page). Route primarily by
+- **Pre-req (dashboard):** subscribe to `payment_success`, `payment_failed`
+  (and `order_success` if it exists) under Developer → Webhook Setup —
+  webhooks only fire for subscribed event types.
+- **First capture the real card-settlement payload in sandbox** (open
+  question #1: where tokenKey/orderMetaData/transactionId sit for card
+  payments — the docs' payment_success sample is a VA transfer, and card
+  charges land under the SAME event type our VA flow consumes; the dispatch
+  routing must cleanly separate card-checkout settlements from VA transfers,
+  e.g. by `transaction.type`/`aliasAccountType` absence + orderMetaData
+  presence, WITHOUT disturbing the existing payment_success VA path). Route
+  primarily by
   `orderMetaData.kind` (Nomba returns orderMetaData in webhook payloads);
   fall back to `orderReference` prefixes. **In every settlement, capture
   Nomba's transaction id into `ChargeAttempt.nombaTransactionId`** — refunds
@@ -346,27 +384,28 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   one click. Persist consent timestamp (SavedCard.createdAt suffices for v1).
 - All amounts kobo `Int` internally; naira only at the Nomba boundary.
 
-## Open questions (ask the owner before the affected stage)
-1. **Stage 3:** exact webhook event type/payload for checkout + tokenized
-   charges on this account — capture one in sandbox before wiring dispatch.
-2. **Stage 2:** is card tokenization enabled on the account tier? (Some Nomba
-   features require support enablement.) Test `tokenizeCard: true` in sandbox
-   first.
-3. **Stage 4 cadence:** daily vs 6-hourly sweep (Railway function — owner
-   creates the trigger).
-4. Charge fees: who bears Nomba's card MDR — absorb or pass on? (Affects
-   whether we charge `remainingDue` or `remainingDue + fee`; v1 assumption:
-   absorb, charge exactly `remainingDue`.)
-5. **Refund mechanics (shape now verified; behavior still to test):** request
-   is `{ transactionId, amount }` — confirmed. Still confirm in sandbox:
-   full-₦50 refund vs fee netting, how long refunds take to land, where the
-   webhook/verify payload carries the transactionId, and Nomba's minimum
-   chargeable amount (if the floor is above ₦50, bump the verification
-   amount).
-6. **Sub-account deposit:** we set `order.accountId = NOMBA_SUB_ACCOUNT_ID`
-   so card money lands in the same wallet as VA inflows/payouts — confirm in
-   sandbox that checkout accepts a sub-account id there (fallback: parent
-   account + internal transfer, or the order `splitRequest`).
+## Open questions (only ONE remains)
+1. **Stage 3:** the exact `payment_success` payload shape for a CARD/checkout
+   settlement — specifically WHERE `tokenKey`, `orderReference`/
+   `orderMetaData`, and `transactionId` sit in `data.transaction` for card
+   payments (the doc's sample is a VA transfer). Capture one real event in
+   sandbox before wiring dispatch. Also confirm on the dashboard whether a
+   separate order/checkout event type exists (`order_success` appears in the
+   replay API's enum) and subscribe to whatever fires for checkout.
+
+## Answered (2026-07-04 — do not re-ask)
+- **Refunds net out processing fees** → we inform the customer in the UI
+  copy (see Path C); no top-up from us.
+- **Tokenization is enabled** on this account. ✔
+- **`order.accountId` accepts the sub-account id** — card money lands in the
+  sub-account wallet. ✔
+- **No strict minimum charge** (≥ ₦1 works) — ₦50 verification amount stands.
+- **Webhook events/retries/signature** — see "Webhook facts" section above;
+  signature scheme matches the existing verify.ts implementation unchanged.
+- Sweep cadence: Railway function; owner will set the schedule when the
+  endpoint ships (same pattern as orphan-spool).
+- Contribution charges: charge exactly `remainingDue`; Nomba's processing fee
+  comes out of the platform wallet (v1 default — revisit if fees bite).
 
 ## Decisions already made (2026-07-04 — do not re-ask)
 - Attempt amounts are ALWAYS the live remaining balance (core rule above);
