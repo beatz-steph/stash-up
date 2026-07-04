@@ -7,7 +7,12 @@ import {
   enrollOrderRef,
   verifyOrderRef,
   chargeOrderRef,
+  retryBackoffHours,
+  computeNextAttempt,
+  type PriorAttempt,
 } from "./enrollment";
+
+const HOUR = 60 * 60 * 1000;
 
 describe("computeRemainingDue (THE CORE COLLECTION RULE)", () => {
   it("returns the unpaid remainder", () => {
@@ -54,5 +59,62 @@ describe("orderReference builders", () => {
 describe("constants", () => {
   it("verification hold is ₦50", () => {
     expect(VERIFICATION_AMOUNT_MINOR).toBe(5000);
+  });
+});
+
+describe("retryBackoffHours", () => {
+  it("is 0 / 24h / 72h for attempts 1 / 2 / 3", () => {
+    expect(retryBackoffHours(1)).toBe(0);
+    expect(retryBackoffHours(2)).toBe(24);
+    expect(retryBackoffHours(3)).toBe(72);
+  });
+});
+
+describe("computeNextAttempt", () => {
+  const now = Date.now();
+
+  it("allows attempt 1 with no history", () => {
+    expect(computeNextAttempt([], now)).toEqual({ eligible: true, attemptNumber: 1 });
+  });
+
+  it("blocks while an attempt is PENDING (no double-charge)", () => {
+    const priors: PriorAttempt[] = [
+      { attemptNumber: 1, status: "PENDING", createdAt: new Date(now - 48 * HOUR) },
+    ];
+    expect(computeNextAttempt(priors, now)).toEqual({ eligible: false, attemptNumber: 0 });
+  });
+
+  it("holds attempt 2 until 24h after attempt 1 failed", () => {
+    const recent: PriorAttempt[] = [
+      { attemptNumber: 1, status: "FAILED", createdAt: new Date(now - 1 * HOUR) },
+    ];
+    expect(computeNextAttempt(recent, now)).toEqual({ eligible: false, attemptNumber: 2 });
+
+    const aged: PriorAttempt[] = [
+      { attemptNumber: 1, status: "FAILED", createdAt: new Date(now - 25 * HOUR) },
+    ];
+    expect(computeNextAttempt(aged, now)).toEqual({ eligible: true, attemptNumber: 2 });
+  });
+
+  it("holds attempt 3 until 72h after attempt 2 failed", () => {
+    const base: PriorAttempt[] = [
+      { attemptNumber: 1, status: "FAILED", createdAt: new Date(now - 200 * HOUR) },
+    ];
+    const recent2 = [...base, { attemptNumber: 2, status: "FAILED", createdAt: new Date(now - 71 * HOUR) }];
+    expect(computeNextAttempt(recent2, now)).toEqual({ eligible: false, attemptNumber: 3 });
+
+    const aged2 = [...base, { attemptNumber: 2, status: "FAILED", createdAt: new Date(now - 73 * HOUR) }];
+    expect(computeNextAttempt(aged2, now)).toEqual({ eligible: true, attemptNumber: 3 });
+  });
+
+  it("stops after MAX_ATTEMPTS (3)", () => {
+    const priors: PriorAttempt[] = [1, 2, 3].map((n) => ({
+      attemptNumber: n,
+      status: "FAILED",
+      createdAt: new Date(now - 1000 * HOUR),
+    }));
+    const res = computeNextAttempt(priors, now);
+    expect(res.eligible).toBe(false);
+    expect(res.attemptNumber).toBe(4);
   });
 });

@@ -71,6 +71,54 @@ export function chargeOrderRef(
   return `cardchg_${cycleId}_${membershipId}_a${attemptNumber}`;
 }
 
+/** Backoff before retry N (hours): attempt 2 waits 24h after attempt 1 failed,
+ * attempt 3 waits 72h after attempt 2 failed. Attempt 1 has no wait. */
+export function retryBackoffHours(attemptNumber: number): number {
+  if (attemptNumber <= 1) return 0;
+  if (attemptNumber === 2) return 24;
+  return 72;
+}
+
+export interface PriorAttempt {
+  attemptNumber: number;
+  status: string; // ChargeAttemptStatus
+  createdAt: Date;
+}
+
+/**
+ * Decide whether a new sweep charge attempt may be created for a (cycle,
+ * membership), and which attemptNumber it would be — given the prior charge
+ * attempts (attemptNumber ≥ 1). Enforces: never while one is PENDING, cap at
+ * MAX_ATTEMPTS, and the retry backoff window measured from the previous
+ * attempt's createdAt. Pure — the sweep supplies remainingDue/card/cycle
+ * checks separately.
+ */
+export function computeNextAttempt(
+  priors: PriorAttempt[],
+  now: number
+): { eligible: boolean; attemptNumber: number } {
+  const charges = priors.filter((a) => a.attemptNumber >= 1);
+
+  // Never double-charge while an attempt is in flight.
+  if (charges.some((a) => a.status === "PENDING")) {
+    return { eligible: false, attemptNumber: 0 };
+  }
+
+  const maxNum = charges.reduce((m, a) => Math.max(m, a.attemptNumber), 0);
+  const attemptNumber = maxNum + 1;
+  if (attemptNumber > MAX_ATTEMPTS) {
+    return { eligible: false, attemptNumber };
+  }
+  if (attemptNumber === 1) {
+    return { eligible: true, attemptNumber };
+  }
+
+  const last = charges.find((a) => a.attemptNumber === maxNum);
+  const backoffMs = retryBackoffHours(attemptNumber) * 60 * 60 * 1000;
+  const eligible = !!last && now - last.createdAt.getTime() >= backoffMs;
+  return { eligible, attemptNumber };
+}
+
 /** Absolute callback URL Nomba redirects the member back to after checkout. */
 export function checkoutCallbackUrl(circleId?: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.stashup.xyz";

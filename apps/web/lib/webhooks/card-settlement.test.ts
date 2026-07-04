@@ -209,7 +209,7 @@ describe("handleCardSettlement — enrollment", () => {
 
     expect(tx.inboundTransfer.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ source: "CARD", providerEventId: "evt1", matchStatus: "MATCHED" }),
+        data: expect.objectContaining({ source: "CARD", providerEventId: "card_att2", matchStatus: "MATCHED" }),
       })
     );
     expect(tx.savedCard.create).toHaveBeenCalled();

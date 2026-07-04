@@ -341,6 +341,7 @@ model ChargeAttempt {
   // REQUIRED for refunds (POST /v1/checkout/refund keys on transactionId).
   nombaTransactionId String?
   refundStatus   RefundStatus        @default(NOT_APPLICABLE)
+  refundRetryCount Int               @default(0)   // sweep gives up after MAX_REFUND_RETRIES
   refundedAt     DateTime?
   createdAt      DateTime            @default(now())
   settledAt      DateTime?

@@ -351,10 +351,27 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   contributions with zero extra work.)
 - Failure events: mark FAILED + failureReason, card-expiry mapping, notify.
 
-### Stage 4 — Debit sweep cron
+### Stage 4 — Debit sweep cron ✅ IMPLEMENTED
 - `POST /api/cron/card-debit-sweep` (CRON_SECRET bearer, same pattern as the
-  others) + **add it to `publicApiRoutes` in `apps/web/proxy.ts`** (the
+  others) + **added to `publicApiRoutes` in `apps/web/proxy.ts`** (the
   orphan-spool 401 taught us this).
+- **⚠️ Refund-API finding (2026-07-04):** live probing found
+  `POST /v1/checkout/refund` returns `{ code: "400", status: false,
+  "Refund transaction failed for transaction Id […]" }` for a real settled
+  Verve checkout — for EVERY id variant (transaction.transactionId, order.orderId,
+  our orderReference). So refunds may not work in this environment (Verve /
+  merchant-config / settlement-timing — confirm with Nomba, and re-test on a
+  Visa/Mastercard). The system already degrades safely: a failed verification
+  refund → `refundStatus: FAILED`, retried by pass 3 up to MAX_REFUND_RETRIES,
+  then left FAILED + `console.error` for manual follow-up (the ₦50 is disclosed
+  to the customer up front). If refunds stay broken, reconsider the ₦50-verify
+  UX (e.g. a smaller hold, or skip the charge and tokenize a zero-value order
+  if Nomba supports it).
+- Backoff anchor: measured from the previous attempt's `createdAt`
+  (`computeNextAttempt` in `lib/cards/enrollment.ts`, unit-tested).
+- Verify backstop (pass 2) definitively FAILs stale non-success attempts (frees
+  the next retry) and captures the txn id on success, leaving final settlement
+  to the retrying webhook (which carries the tokenKey the verify call doesn't).
 - Logic: for each cycle in OPEN/COLLECTING joined to memberships with
   `autoDebitCardId` set and that card ACTIVE: compute `remainingDue`; apply
   the eligibility predicate (section above); create ChargeAttempt (PENDING)

@@ -81,7 +81,9 @@ export async function handleCardSettlement(
   const last4 = order?.cardLast4Digits ?? null;
   const cardType = tokenized?.cardType ?? order?.cardType ?? null;
 
-  console.log(`[card-webhook] settling kind=${kind} attempt=${attempt.id} amountMinor=${amountMinor}`);
+  console.log(
+    `[card-webhook] settling kind=${kind} attempt=${attempt.id} receipt=${receipt.id} amountMinor=${amountMinor}`
+  );
 
   if (kind === "cardverify") {
     await settleVerification(attempt, { tokenKey, last4, cardType, nombaTxId });
@@ -89,7 +91,7 @@ export async function handleCardSettlement(
   }
 
   // cardenroll / cardchg — money applies to the cycle's pot.
-  await settleContribution(receipt, attempt, kind, {
+  await settleContribution(attempt, kind, {
     tokenKey,
     last4,
     cardType,
@@ -173,7 +175,6 @@ async function settleVerification(
 }
 
 async function settleContribution(
-  receipt: WebhookReceipt,
   attempt: ChargeAttempt,
   kind: "cardenroll" | "cardchg",
   data: {
@@ -234,7 +235,10 @@ async function settleContribution(
         data: {
           provider: "NOMBA",
           source: "CARD",
-          providerEventId: receipt.providerEventId,
+          // Deterministic per-attempt key so the webhook and the verify-backstop
+          // (Stage 4) can never double-apply the same charge — whichever runs
+          // first wins; the other hits this unique and no-ops.
+          providerEventId: `card_${attempt.id}`,
           nombaTransactionId: data.nombaTxId,
           amountMinor: data.amountMinor,
           currency: data.currency,
