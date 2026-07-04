@@ -28,3 +28,18 @@ export type WalletLedgerEntryDto = z.infer<typeof WalletLedgerEntrySchema>;
 /** POST /api/wallet/virtual-account — provision (or return) the top-up VA. */
 export const WalletVirtualAccountResSchema = WalletVirtualAccountSchema;
 export type WalletVirtualAccountRes = z.infer<typeof WalletVirtualAccountResSchema>;
+
+/** POST /api/wallet/topup — start a card top-up. amountMinor is what the user
+ * wants credited; they pay amountMinor + card fee at checkout. */
+export const WalletTopupReqSchema = z.object({
+  amountMinor: z.number().int().min(10_000), // ₦100 minimum
+});
+export type WalletTopupReq = z.infer<typeof WalletTopupReqSchema>;
+
+export const WalletTopupResSchema = z.object({
+  checkoutLink: z.string(),
+  netMinor: z.number().int(), // credited to the wallet
+  feeMinor: z.number().int(), // card fee added on top
+  chargedMinor: z.number().int(), // net + fee — what the card is charged
+});
+export type WalletTopupRes = z.infer<typeof WalletTopupResSchema>;

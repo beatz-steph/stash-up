@@ -10,11 +10,13 @@ import {
   CardTitle,
 } from "@workspace/ui/components/card"
 import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
 import { toast } from "@workspace/ui/components/sonner"
 import { formatNaira } from "@/lib/money"
+import { cardFeeOn } from "@/lib/fees"
 import type { WalletLedgerEntryDto } from "@/app/api/wallet/dto/wallet.dto"
 import { useWallet } from "../queries"
-import { useProvisionWalletAccount } from "../mutations"
+import { useProvisionWalletAccount, useTopupWalletByCard } from "../mutations"
 
 const SOURCE_LABEL: Record<string, string> = {
   TOPUP_BANK: "Bank top-up",
@@ -58,9 +60,14 @@ function EntryRow({ entry }: { entry: WalletLedgerEntryDto }) {
 export function WalletCard() {
   const { data: wallet, isLoading } = useWallet()
   const provision = useProvisionWalletAccount()
+  const topupByCard = useTopupWalletByCard()
   const [showTopUp, setShowTopUp] = useState(false)
+  const [cardAmount, setCardAmount] = useState("")
 
   const va = wallet?.virtualAccount ?? null
+  const cardNaira = Number(cardAmount)
+  const cardAmountMinor = Number.isFinite(cardNaira) ? Math.round(cardNaira * 100) : 0
+  const cardValid = cardAmountMinor >= 10_000 // ₦100 minimum
 
   function handleShowTopUp() {
     setShowTopUp(true)
@@ -96,6 +103,45 @@ export function WalletCard() {
               <p className="mt-1 font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
                 {formatNaira(wallet?.balanceMinor ?? 0)}
               </p>
+            </div>
+
+            {/* Card top-up — user pays amount + card fee, wallet gets the amount */}
+            <div className="space-y-2 rounded-su-lg border border-su-hairline bg-su-surface p-4">
+              <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                Top up with card
+              </span>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={100}
+                  placeholder="Amount (₦)"
+                  value={cardAmount}
+                  onChange={(e) => setCardAmount(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  size="sm"
+                  disabled={!cardValid || topupByCard.isPending}
+                  onClick={() => topupByCard.mutate({ amountMinor: cardAmountMinor })}
+                >
+                  {topupByCard.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Top up
+                </Button>
+              </div>
+              {cardValid ? (
+                <p className="font-su-sans text-su-caption text-su-muted">
+                  You&apos;ll be charged {formatNaira(cardAmountMinor + cardFeeOn(cardAmountMinor))} (incl.{" "}
+                  {formatNaira(cardFeeOn(cardAmountMinor))} card fee); {formatNaira(cardAmountMinor)} lands
+                  in your wallet.
+                </p>
+              ) : (
+                <p className="font-su-sans text-su-caption text-su-muted">
+                  Minimum ₦100. A small card fee is added on top.
+                </p>
+              )}
             </div>
 
             {!showTopUp ? (

@@ -8,6 +8,7 @@ import {
   handleCardSettlement,
   handleCardFailure,
 } from "./card-settlement";
+import { handleWalletBankTopup } from "./wallet-topup";
 import { advanceRotation } from "../payout/rotation";
 import { createNotification } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
@@ -39,6 +40,12 @@ export async function dispatchWebhookEvent(
       const virtualAccount = await prisma.virtualAccount.findUnique({
         where: { accountRef: aliasAccountReference },
       });
+
+      // WALLET VA credit = a bank top-up → wallet ledger, not a contribution.
+      if (virtualAccount && virtualAccount.kind === "WALLET") {
+        await handleWalletBankTopup(receipt, payload, virtualAccount);
+        break;
+      }
 
       let membership = null;
       let circle = null;

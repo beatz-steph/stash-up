@@ -13,6 +13,7 @@ export interface NombaWebhookPayload {
       type?: string;
       time?: string;
       responseCode?: string;
+      fee?: number | string; // provider fee (card settlements report it)
       transactionAmount?: number | string;
       merchantTxRef?: string;
       aliasAccountReference?: string;

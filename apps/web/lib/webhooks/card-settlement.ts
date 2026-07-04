@@ -4,6 +4,7 @@ import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
 import { applyContributionSplit } from "../reconciliation/apply";
 import { refundCheckoutTransaction } from "@/lib/nomba-client";
+import { handleWalletCardTopup } from "./wallet-topup";
 import { createNotification } from "@/lib/notifications";
 
 type CardKind = "cardenroll" | "cardverify" | "cardchg";
@@ -51,6 +52,13 @@ export async function handleCardSettlement(
 
   const meta = order?.orderMetaData;
   const orderRef = order?.orderReference ?? "";
+
+  // Wallet card top-up: a checkout with no ChargeAttempt — credit the wallet.
+  if (meta?.kind === "wallettopup" || orderRef.startsWith("wallettopup_")) {
+    await handleWalletCardTopup(receipt, payload);
+    return;
+  }
+
   const kind = deriveKind(meta, orderRef);
   const nombaTxId = transaction?.transactionId ?? "";
   const amountMinor = Math.round(Number(transaction?.transactionAmount ?? order?.amount ?? 0) * 100);
