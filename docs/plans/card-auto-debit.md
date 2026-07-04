@@ -68,6 +68,19 @@ enum ChargeAttemptStatus {
   SUPERSEDED  // remainingDue hit 0 (or cycle left OPEN/COLLECTING) before this retry ran
 }
 
+enum ChargePurpose {
+  CONTRIBUTION  // sweep/link charge applied to a cycle's pot
+  ENROLLMENT    // new-card checkout that doubled as the contribution
+  VERIFICATION  // ₦50 tokenization charge — refunded after success, never applied to a pot
+}
+
+enum RefundStatus {
+  NOT_APPLICABLE
+  PENDING
+  REFUNDED
+  FAILED       // refund call failed — surfaced for manual follow-up, retried by sweep
+}
+
 model SavedCard {
   id         String     @id @default(cuid())
   userId     String                       // user-level card LIST — multiple cards per user
@@ -87,21 +100,27 @@ model SavedCard {
 
 model ChargeAttempt {
   id             String              @id @default(cuid())
-  cycleId        String
-  cycle          Cycle               @relation(fields: [cycleId], references: [id])
-  membershipId   String
-  membership     Membership          @relation(fields: [membershipId], references: [id])
-  savedCardId    String
-  amountMinor    Int                  // the remainingDue that was charged (kobo)
-  orderReference String              @unique  // "cardchg_{cycleId}_{membershipId}_a{attemptNumber}"
-  attemptNumber  Int                  // 1..MAX_ATTEMPTS per (cycle, membership)
+  // Nullable: a VERIFICATION charge from Settings has no circle context.
+  cycleId        String?
+  cycle          Cycle?              @relation(fields: [cycleId], references: [id])
+  membershipId   String?
+  membership     Membership?         @relation(fields: [membershipId], references: [id])
+  userId         String               // always known, even without a circle
+  savedCardId    String?              // null until the tokenization webhook creates the card
+  purpose        ChargePurpose
+  amountMinor    Int                  // remainingDue charged, or 5000 (₦50) for VERIFICATION
+  orderReference String              @unique  // "cardchg_{cycleId}_{membershipId}_a{n}" | "cardenroll_..." | "cardverify_{userId}_{cuid}"
+  attemptNumber  Int                  // 1..MAX_ATTEMPTS per (cycle, membership); 0 for enroll/verify
   status         ChargeAttemptStatus @default(PENDING)
   failureReason  String?
+  refundStatus   RefundStatus        @default(NOT_APPLICABLE)
+  refundedAt     DateTime?
   createdAt      DateTime            @default(now())
   settledAt      DateTime?
 
   @@unique([cycleId, membershipId, attemptNumber])
   @@index([status, createdAt])
+  @@index([refundStatus])
 }
 ```
 
@@ -167,6 +186,10 @@ Note `User` and `Cycle`/`Membership` need the back-relation fields added.
   - `deleteTokenizedCard(...)` per the delete-tokenized-card-data endpoint.
   - `verifyCheckoutTransaction(orderReference)` — Verify Transactions endpoint
     (used by the reconcile sweep for stuck PENDING attempts).
+  - `refundCheckoutTransaction(...)` — per
+    `/nomba-api-reference/online-checkout/refund-checkout-transaction.md`
+    (verify exact request fields when implementing: likely orderReference/
+    transaction id + amount). Used to return the ₦50 VERIFICATION charge.
 
 ### Stage 2 — Enrollment flow (web): two paths per circle
 Enabling auto-save on a circle presents the user's card list + "Add new card".
@@ -179,18 +202,32 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   UX; otherwise the next sweep handles it).
 - `DELETE /api/circles/[id]/auto-debit` — unbind this circle only.
 
-**Path B — add a NEW card (tokenizing checkout):**
-- `POST /api/cards/enroll` body `{ circleId }`. Guards: member of circle,
-  cycle OPEN/COLLECTING, `remainingDue > 0` (the enrollment charge IS the
-  current contribution — no wasted charge; if paid up, reject with "you're
-  paid up — link this card from your card list next cycle, or add it in
-  Settings"). Creates checkout order with `tokenizeCard: true`,
-  `orderReference = "cardenroll_{cycleId}_{membershipId}"`, PENDING
-  ChargeAttempt (attemptNumber 0 = enrollment), returns the checkout link.
+**Path B — add a NEW card from a circle (tokenizing checkout):**
+- `POST /api/cards/enroll` body `{ circleId }`. Guards: member of circle.
+  Cards can be added at ANY point, including mid-cycle (decided):
+  - If the current cycle is OPEN/COLLECTING and `remainingDue > 0`:
+    **contribution mode** — the enrollment charge IS the contribution.
+    Checkout order for `remainingDue` with `tokenizeCard: true`,
+    `orderReference = "cardenroll_{cycleId}_{membershipId}"`, PENDING
+    ChargeAttempt (purpose ENROLLMENT, attemptNumber 0).
+  - Otherwise (paid up, or no open cycle): **verification mode** — ₦50
+    (`5000` kobo) checkout order with `tokenizeCard: true`,
+    `orderReference = "cardverify_{userId}_{cuid}"`, PENDING ChargeAttempt
+    (purpose VERIFICATION, refundStatus PENDING-to-be after settlement,
+    membershipId still recorded so settlement can bind the card to this
+    circle). The ₦50 is refunded after successful tokenization (Stage 3).
+  Returns the checkout link either way.
   On webhook settlement: create the SavedCard in the user's list AND bind it
   to THIS membership only.
-- Optional Settings variant (add a card without a circle): defer to v2 unless
-  trivially cheap — the circle-scoped flow covers the launch need.
+
+**Path C — add a card from Settings (no circle context):**
+- `POST /api/cards/enroll` with no `circleId`: always **verification mode** —
+  ₦50 tokenizing checkout, `orderReference = "cardverify_{userId}_{cuid}"`,
+  ChargeAttempt purpose VERIFICATION with null cycle/membership. On
+  settlement: SavedCard created (bound to nothing — user links it to circles
+  later), refund triggered.
+- UI copy must say: "We'll charge ₦50 to verify your card and refund it
+  immediately after."
 
 **Card management (user-level):**
 - `GET /api/cards` — the user's card list (id/last4/brand/status + which
@@ -216,6 +253,13 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   Prisma-applying helper in `apps/web/lib/reconciliation/apply.ts` and have
   web webhook + card flows use it; admin keeps its own copy or imports are
   restructured — implementer's call, but NO third duplicate).
+- Verification settlement (`cardverify_*`): extract `tokenKey` → create the
+  SavedCard (bind to the recorded membership if the attempt has one; Settings
+  path binds nothing); mark the attempt SUCCESS with `refundStatus: PENDING`;
+  then call `refundCheckoutTransaction` for the ₦50 (best-effort — on success
+  set REFUNDED + refundedAt; on failure set refundStatus FAILED and let the
+  sweep retry). The ₦50 is NEVER applied to any pot/contribution/buffer — it
+  is not member savings, it's a verification hold being returned.
 - Charge settlement (`cardchg_*`): mark attempt SUCCESS/FAILED; on success
   apply via the same helper (creates an InboundTransfer-equivalent record —
   create an InboundTransfer row with `providerEventId = "cardchg_..."` and
@@ -238,6 +282,10 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
   try/catch so one failure doesn't abort the sweep (orphan-spool pattern).
 - Also in the same sweep: for PENDING attempts older than 30 min, call
   `verifyCheckoutTransaction` and settle them (webhook-missed backstop).
+- And: retry `refundCheckoutTransaction` for attempts with
+  `refundStatus: FAILED` (max 3 refund retries, then leave FAILED — it's
+  indexed, so an admin view can pick stragglers up later; also send
+  ourselves a console.error so it shows in logs).
 - Railway trigger (daily or 6-hourly):
   `curl -X POST https://www.stashup.xyz/api/cron/card-debit-sweep -H "authorization: Bearer $CRON_SECRET"`
 - Tests are the heart of this stage — cover the CORE RULE explicitly:
@@ -277,6 +325,11 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
 4. Charge fees: who bears Nomba's card MDR — absorb or pass on? (Affects
    whether we charge `remainingDue` or `remainingDue + fee`; v1 assumption:
    absorb, charge exactly `remainingDue`.)
+5. **Refund mechanics:** confirm in sandbox whether
+   refund-checkout-transaction refunds the FULL ₦50 (or nets out fees), how
+   long refunds take to land, and its exact request fields. Also confirm the
+   minimum chargeable amount — if Nomba's floor is above ₦50, bump the
+   verification amount accordingly.
 
 ## Decisions already made (2026-07-04 — do not re-ask)
 - Attempt amounts are ALWAYS the live remaining balance (core rule above);
@@ -290,3 +343,8 @@ Enabling auto-save on a circle presents the user's card list + "Add new card".
 - Enrollment charge (new-card path) doubles as the current cycle's
   contribution; linking an existing card triggers an immediate charge for the
   current `remainingDue` when > 0.
+- Cards can be added at ANY time — mid-cycle, paid up, or with no circle at
+  all (Settings). When there's no contribution to collect, tokenization runs
+  via a **₦50 verification charge that is refunded** immediately after
+  successful tokenization (Nomba refund-checkout-transaction endpoint —
+  confirmed to exist). The ₦50 never touches a pot or buffer.
