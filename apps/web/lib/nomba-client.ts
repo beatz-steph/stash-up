@@ -366,3 +366,79 @@ export async function getBanks() {
     name: string;
   }[];
 }
+
+// GET /v1/transactions/virtual — one row per transaction on a virtual account.
+// Only the fields the orphan spool needs; the response has many more.
+const VirtualAccountTxSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  amount: z.union([z.string(), z.number()]), // naira, sometimes a string ("100.0")
+  type: z.string().optional(), // e.g. "vact_transfer"
+  entryType: z.string().optional(), // "CREDIT" | "DEBIT"
+  timeCreated: z.string(),
+  senderName: z.string().nullish(),
+  narration: z.string().nullish(),
+  sessionId: z.string().nullish(),
+  recipientAccountNumber: z.string().nullish(),
+});
+export type VirtualAccountTx = z.infer<typeof VirtualAccountTxSchema>;
+
+const VirtualAccountTxPageSchema = z.object({
+  cursor: z.string().optional().default(""),
+  results: z.array(VirtualAccountTxSchema).default([]),
+});
+
+/** Naira amount (number or "100.0") → kobo Int. */
+export function nairaToKobo(amount: string | number): number {
+  return Math.round(Number(amount) * 100);
+}
+
+/**
+ * List transactions on a single virtual account within a UTC date window.
+ * Pages through the cursor and returns every row (bounded by maxPages so a
+ * runaway cursor can't loop forever). `from`/`to` are ISO-8601 UTC strings.
+ */
+export async function listVirtualAccountTransactions(params: {
+  virtualAccount: string;
+  from: string;
+  to: string;
+  limit?: number;
+  maxPages?: number;
+}): Promise<VirtualAccountTx[]> {
+  const { virtualAccount, from, to, limit = 100, maxPages = 20 } = params;
+  const rows: VirtualAccountTx[] = [];
+  let cursor = "";
+
+  for (let page = 0; page < maxPages; page++) {
+    const qs = new URLSearchParams({
+      virtual_account: virtualAccount,
+      dateFrom: from,
+      dateTo: to,
+      limit: String(limit),
+    });
+    if (cursor) qs.set("cursor", cursor);
+
+    const res = await nombaFetch(`/v1/transactions/virtual?${qs.toString()}`);
+    if (!res.ok) {
+      throw new Error(
+        `List virtual-account transactions failed: ${res.status} ${await res.text()}`
+      );
+    }
+
+    const data = await res.json();
+    const parsed = VirtualAccountTxPageSchema.safeParse(data?.data);
+    if (!parsed.success) {
+      throw new Error(
+        `List virtual-account transactions: unexpected Nomba response (code=${
+          data?.code ?? "?"
+        }): ${data?.description ?? "no data field"}`
+      );
+    }
+
+    rows.push(...parsed.data.results);
+    cursor = parsed.data.cursor;
+    if (!cursor) break; // empty cursor = no more pages
+  }
+
+  return rows;
+}

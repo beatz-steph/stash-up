@@ -89,6 +89,12 @@ enum PayoutStatus {
   REFUNDED
 }
 
+enum OrphanStatus {
+  PENDING   // spooled from Nomba, not yet reconciled by an admin
+  RESOLVED  // replayed into a member's contribution/buffer
+  IGNORED   // admin decided it needs no action
+}
+
 enum ConfigStatus {
   ACTIVE
   INVALID
@@ -193,9 +199,38 @@ model VirtualAccount {
   createdAt           DateTime   @default(now())
 
   inboundTransfers    InboundTransfer[]
+  orphanTransactions  OrphanTransaction[]
 
   @@index([accountRef])
   @@index([bankAccountNumber])
+}
+
+// A credit spooled from Nomba's virtual-account transaction history that we
+// have no InboundTransfer for (a missed/undelivered webhook). Surfaced to
+// admins to replay into a member's contribution/buffer or ignore.
+model OrphanTransaction {
+  id                  String       @id @default(cuid())
+  provider            String       @default("NOMBA")
+  nombaTransactionId  String       @unique   // list endpoint `id`
+  virtualAccountId    String
+  virtualAccount      VirtualAccount @relation(fields: [virtualAccountId], references: [id])
+  amountMinor         Int                     // amount (naira) × 100
+  currency            String       @default("NGN")
+  entryType           String                  // e.g. CREDIT
+  txType              String?                 // e.g. vact_transfer
+  senderName          String?
+  narration           String?
+  sessionId           String?
+  transactionAt       DateTime                // Nomba timeCreated
+  spooledAt           DateTime     @default(now())
+  status              OrphanStatus @default(PENDING)
+  resolvedByAdminId   String?                 // admin_user id
+  resolvedAt          DateTime?
+  resolutionNote      String?
+  inboundTransferId   String?      @unique     // set when replayed into the normal flow
+
+  @@index([status, transactionAt])
+  @@index([virtualAccountId])
 }
 
 model Cycle {
