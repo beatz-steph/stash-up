@@ -23,12 +23,22 @@ export function useProvisionWalletAccount() {
   })
 }
 
-/** Start a card top-up, then redirect to the hosted checkout. */
+/**
+ * Top up by card. A saved card is charged server-side ("charged" → toast +
+ * refresh, balance updates once Nomba confirms); a new card redirects to the
+ * hosted checkout ("checkout").
+ */
 export function useTopupWalletByCard() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: WalletTopupReq) => topupWalletByCard(body),
     onSuccess: (res) => {
-      window.location.href = res.checkoutLink
+      if (res.mode === "checkout" && res.checkoutLink) {
+        window.location.href = res.checkoutLink
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      toast.success("Charging your card — your balance updates once it's confirmed")
     },
     onError: (error) => {
       toast.error(error.message || "Could not start the top-up")

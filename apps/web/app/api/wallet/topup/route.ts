@@ -1,17 +1,19 @@
-import { randomUUID } from "node:crypto";
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
 import { requireVerifiedEmail } from "@/lib/access-control";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { createCheckoutOrder } from "@/lib/nomba-client";
+import { prisma } from "@workspace/db";
+import { createCheckoutOrder, chargeTokenizedCard } from "@/lib/nomba-client";
 import { grossUpForCardFee, cardFeeOn } from "@/lib/fees";
-import { checkoutCallbackUrl } from "@/lib/cards/enrollment";
+import { checkoutCallbackUrl, orderNonce } from "@/lib/cards/enrollment";
 import { WalletTopupReqSchema, type WalletTopupRes } from "../dto/wallet.dto";
 
 /**
  * Start a card top-up. The user is charged `amountMinor + card fee` so the full
  * `amountMinor` lands in their wallet after Nomba's cut. Settlement credits the
- * NET actually received (Stage 3 webhook). Returns a hosted-checkout link.
+ * NET actually received (handleWalletCardTopup webhook). Two paths:
+ *  - savedCardId present → charge the tokenized card server-side ("charged").
+ *  - omitted → hosted-checkout link for a new card ("checkout").
  */
 export async function POST(req: Request) {
   const session = await getSession();
@@ -41,11 +43,53 @@ export async function POST(req: Request) {
   }
 
   const userId = session.user.id;
-  const netMinor = parsed.data.amountMinor;
+  const { amountMinor: netMinor, savedCardId } = parsed.data;
   const feeMinor = cardFeeOn(netMinor);
   const chargedMinor = grossUpForCardFee(netMinor);
-  const orderReference = `wallettopup_${userId}_${randomUUID()}`;
+  // Short ref — Nomba caps orderReference at 50 chars. The userId + netMinor
+  // ride in orderMetaData, which is how the settlement webhook routes/credits.
+  const orderReference = `wallettopup_${orderNonce()}`;
+  const metadata = { kind: "wallettopup", userId, netMinor: String(netMinor) };
 
+  // ── Saved-card path: charge the tokenized card server-side ──
+  if (savedCardId) {
+    const card = await prisma.savedCard.findUnique({
+      where: { id: savedCardId },
+      select: { userId: true, status: true, tokenKey: true },
+    });
+    if (!card || card.userId !== userId) {
+      return apiError("Card not found", 404);
+    }
+    if (card.status !== "ACTIVE") {
+      return apiError("That card is no longer usable. Add a new card.", 409);
+    }
+
+    try {
+      await chargeTokenizedCard({
+        orderReference,
+        customerEmail: session.user.email,
+        amountMinor: chargedMinor,
+        tokenKey: card.tokenKey,
+        metadata,
+      });
+    } catch (err) {
+      console.error(
+        "[wallet/topup] tokenized charge failed:",
+        err instanceof Error ? err.message : err
+      );
+      return apiError("Could not charge that card. Please try again.", 502);
+    }
+
+    return apiSuccess<WalletTopupRes>({
+      mode: "charged",
+      checkoutLink: null,
+      netMinor,
+      feeMinor,
+      chargedMinor,
+    });
+  }
+
+  // ── New-card path: hosted checkout ──
   try {
     const order = await createCheckoutOrder({
       orderReference,
@@ -53,10 +97,11 @@ export async function POST(req: Request) {
       amountMinor: chargedMinor,
       callbackUrl: checkoutCallbackUrl(),
       tokenizeCard: false, // one-off top-up; not saving the card
-      metadata: { kind: "wallettopup", userId, netMinor: String(netMinor) },
+      metadata,
     });
 
     return apiSuccess<WalletTopupRes>({
+      mode: "checkout",
       checkoutLink: order.checkoutLink,
       netMinor,
       feeMinor,

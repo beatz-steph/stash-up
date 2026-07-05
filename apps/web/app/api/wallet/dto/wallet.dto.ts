@@ -30,14 +30,20 @@ export const WalletVirtualAccountResSchema = WalletVirtualAccountSchema;
 export type WalletVirtualAccountRes = z.infer<typeof WalletVirtualAccountResSchema>;
 
 /** POST /api/wallet/topup — start a card top-up. amountMinor is what the user
- * wants credited; they pay amountMinor + card fee at checkout. */
+ * wants credited; they pay amountMinor + card fee. Pass `savedCardId` to charge
+ * an existing saved card (server-initiated); omit it for a new card (hosted
+ * checkout redirect). */
 export const WalletTopupReqSchema = z.object({
   amountMinor: z.number().int().min(10_000), // ₦100 minimum
+  savedCardId: z.string().min(1).optional(),
 });
 export type WalletTopupReq = z.infer<typeof WalletTopupReqSchema>;
 
 export const WalletTopupResSchema = z.object({
-  checkoutLink: z.string(),
+  // "checkout" → redirect the user to checkoutLink (new card).
+  // "charged"  → the saved card is being charged; balance updates on settlement.
+  mode: z.enum(["checkout", "charged"]),
+  checkoutLink: z.string().nullable(),
   netMinor: z.number().int(), // credited to the wallet
   feeMinor: z.number().int(), // card fee added on top
   chargedMinor: z.number().int(), // net + fee — what the card is charged

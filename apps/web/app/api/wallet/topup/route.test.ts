@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "./route";
 import { getSession } from "@/lib/session";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { createCheckoutOrder } from "@/lib/nomba-client";
+import { createCheckoutOrder, chargeTokenizedCard } from "@/lib/nomba-client";
+import { prisma } from "@workspace/db";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
-vi.mock("@/lib/nomba-client", () => ({ createCheckoutOrder: vi.fn() }));
+vi.mock("@/lib/nomba-client", () => ({
+  createCheckoutOrder: vi.fn(),
+  chargeTokenizedCard: vi.fn(),
+}));
+vi.mock("@workspace/db", () => ({ prisma: { savedCard: { findUnique: vi.fn() } } }));
 
 function req(body: unknown) {
   return new NextRequest("http://localhost/api/wallet/topup", {
@@ -44,11 +49,13 @@ describe("POST /api/wallet/topup", () => {
     expect((await POST(req({ amountMinor: 100_000 }))).status).toBe(503);
   });
 
-  it("charges the grossed-up amount and credits the requested net", async () => {
+  it("new card: hosted checkout, grossed-up charge, short orderReference", async () => {
     vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
     const res = await POST(req({ amountMinor: 1_000_000 })); // ₦10,000 net
     expect(res.status).toBe(200);
     const { data } = await res.json();
+    expect(data.mode).toBe("checkout");
+    expect(data.checkoutLink).toBe("https://pay.nomba/topup");
     expect(data.netMinor).toBe(1_000_000);
     expect(data.chargedMinor).toBeGreaterThan(1_000_000); // grossed up for the fee
     expect(data.feeMinor).toBe(data.chargedMinor - data.netMinor);
@@ -57,5 +64,52 @@ describe("POST /api/wallet/topup", () => {
     expect(orderArg.amountMinor).toBe(data.chargedMinor);
     expect(orderArg.tokenizeCard).toBe(false);
     expect(orderArg.metadata).toMatchObject({ kind: "wallettopup", userId: "u1", netMinor: "1000000" });
+    // Nomba caps orderReference at 50 chars.
+    expect(orderArg.orderReference.length).toBeLessThanOrEqual(50);
+    expect(orderArg.orderReference).toMatch(/^wallettopup_/);
+    expect(chargeTokenizedCard).not.toHaveBeenCalled();
+  });
+
+  it("saved card: charges the token server-side, no checkout link", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "ACTIVE",
+      tokenKey: "TK_SECRET",
+    } as never);
+    vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: "success" } as never);
+
+    const res = await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.mode).toBe("charged");
+    expect(data.checkoutLink).toBeNull();
+
+    const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
+    expect(chargeArg.tokenKey).toBe("TK_SECRET");
+    expect(chargeArg.amountMinor).toBe(data.chargedMinor);
+    expect(chargeArg.orderReference.length).toBeLessThanOrEqual(50);
+    expect(chargeArg.metadata).toMatchObject({ kind: "wallettopup", userId: "u1" });
+    expect(createCheckoutOrder).not.toHaveBeenCalled();
+  });
+
+  it("saved card: 404 when the card isn't the user's", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "someone-else",
+      status: "ACTIVE",
+      tokenKey: "TK",
+    } as never);
+    expect((await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }))).status).toBe(404);
+  });
+
+  it("saved card: 409 when the card is not ACTIVE", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "EXPIRED",
+      tokenKey: "TK",
+    } as never);
+    expect((await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }))).status).toBe(409);
   });
 });
