@@ -3,7 +3,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { requireCircleMember, requireVerifiedEmail } from "@/lib/access-control";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { chargeTokenizedCard, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import { createCheckoutOrder, verifyCheckoutTransaction } from "@/lib/nomba-client";
 import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
 import { grossUpForCardFee } from "@/lib/fees";
 import {
@@ -12,17 +12,18 @@ import {
   shouldCollectNow,
   chargeOrderRef,
   orderNonce,
-  isUsableCardToken,
+  checkoutCallbackUrl,
 } from "@/lib/cards/enrollment";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { PayNowReqSchema, type PayNowRes } from "./dto/pay-now.dto";
 
 /**
- * Pay the current cycle's amount due on demand — the missing "I want to pay
- * early" path (bank transfer is manual, auto-save is recurring). Explicit
- * method: WALLET debits the balance instantly (internal ledger move); CARD
- * charges a saved card (settles via the webhook, same as the auto-debit sweep).
- * Never binds auto-save — this is a one-off payment.
+ * Pay the current cycle's amount due on demand — the "I want to pay early" path
+ * (bank transfer is manual, wallet auto-save is recurring). Explicit method:
+ * WALLET debits the balance instantly (internal ledger move); CARD sends the
+ * member to a one-time Nomba hosted checkout (no saved cards on this account) —
+ * the contribution is applied on settlement, exactly like the enrollment charge
+ * used to be. Never binds auto-save — this is a one-off payment.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -81,72 +82,54 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: "APPLIED",
       debitedMinor: res.debitedMinor,
       remainingDueMinor: res.remainingDueMinor,
-      otp: null,
+      checkoutLink: null,
     });
   }
 
-  // ── CARD: charge a saved card (settles via webhook) ──
+  // ── CARD: one-time hosted checkout (settles via webhook) ──
   if (await isNombaIntegrationDisabled()) {
     return apiError("Card payments are temporarily unavailable", 503);
   }
 
-  const card = await prisma.savedCard.findUnique({
-    where: { id: parsed.data.savedCardId },
-    select: { id: true, userId: true, status: true, tokenKey: true },
-  });
-  if (!card || card.userId !== userId) return apiError("Card not found", 404);
-  if (card.status !== "ACTIVE") return apiError("That card is no longer usable. Add a new card.", 409);
-  // Placeholder token (Nomba returned "N/A" — never truly tokenized) can't be
-  // charged offline; retire it and tell the user to re-add the card.
-  if (!isUsableCardToken(card.tokenKey)) {
-    await prisma.savedCard.update({ where: { id: card.id }, data: { status: "EXPIRED" } });
-    return apiError("That saved card can't be charged automatically. Please add it again.", 409);
-  }
-
-  // Never double-charge while an attempt is already in flight for this cycle —
-  // but don't dead-end on a stuck one either. If a PENDING card attempt exists,
-  // ask Nomba the truth: already settled → apply it now (the webhook was missed);
-  // definitively failed → unblock a fresh charge; still in-flight → 409.
+  // Don't spin up a second checkout while one is already in flight for this
+  // cycle — but don't dead-end on a stuck one either. If a PENDING card attempt
+  // exists, ask Nomba the truth: already settled → apply it now (webhook was
+  // missed); definitively failed → unblock a fresh checkout; still open → 409.
   const pending = await prisma.chargeAttempt.findFirst({
     where: { cycleId: currentCycle.id, membershipId: membership.id, status: "PENDING" },
     orderBy: { createdAt: "desc" },
   });
   if (pending) {
     let unblocked = false;
-    if (pending.purpose === "CONTRIBUTION") {
-      try {
-        const v = await verifyCheckoutTransaction(pending.orderReference);
-        if (v.settled) {
-          await settleCardChargeFromVerify(pending, {
-            transactionId: v.transactionId,
-            feeMinor: v.feeMinor,
-            grossMinor: v.amountMinor,
-          });
-          return apiSuccess<PayNowRes>({
-            method: "CARD",
-            status: "CHARGING",
-            debitedMinor: 0,
-            remainingDueMinor: 0,
-            otp: null,
-          });
-        }
-        if (v.status && !/pending|processing/i.test(v.status)) {
-          await prisma.chargeAttempt.update({
-            where: { id: pending.id },
-            data: { status: "FAILED", failureReason: `verify_${v.status.toLowerCase()}` },
-          });
-          unblocked = true; // fall through to a fresh charge below
-        }
-      } catch (err) {
-        console.error(
-          "[pay-now] verify pending failed:",
-          err instanceof Error ? err.message : err
-        );
+    try {
+      const v = await verifyCheckoutTransaction(pending.orderReference);
+      if (v.settled) {
+        await settleCardChargeFromVerify(pending, {
+          transactionId: v.transactionId,
+          feeMinor: v.feeMinor,
+          grossMinor: v.amountMinor,
+        });
+        return apiSuccess<PayNowRes>({
+          method: "CARD",
+          status: "CHECKOUT",
+          debitedMinor: 0,
+          remainingDueMinor: 0,
+          checkoutLink: null,
+        });
       }
+      if (v.status && !/pending|processing/i.test(v.status)) {
+        await prisma.chargeAttempt.update({
+          where: { id: pending.id },
+          data: { status: "FAILED", failureReason: `verify_${v.status.toLowerCase()}` },
+        });
+        unblocked = true; // fall through to a fresh checkout below
+      }
+    } catch (err) {
+      console.error("[pay-now] verify pending failed:", err instanceof Error ? err.message : err);
     }
     if (!unblocked) {
       return apiError(
-        "A card payment is already processing for this cycle. Give it a moment, then try again.",
+        "A card payment is already in progress for this cycle. Finish it, or give it a moment and try again.",
         409
       );
     }
@@ -169,7 +152,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       cycleId: currentCycle.id,
       membershipId: membership.id,
       userId,
-      savedCardId: card.id,
       purpose: "CONTRIBUTION",
       amountMinor: chargeMinor,
       orderReference,
@@ -178,13 +160,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
   });
 
-  let charge;
+  let order;
   try {
-    charge = await chargeTokenizedCard({
+    order = await createCheckoutOrder({
       orderReference,
       customerEmail: session.user.email,
       amountMinor: chargeMinor,
-      tokenKey: card.tokenKey,
+      callbackUrl: checkoutCallbackUrl(circleId),
+      tokenizeCard: false,
+      allowedPaymentMethods: ["Card"],
       metadata: {
         kind: "cardchg",
         userId,
@@ -194,35 +178,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
   } catch (err) {
-    console.error(
-      "[pay-now] card charge failed:",
-      err instanceof Error ? err.message : err
-    );
+    console.error("[pay-now] checkout order failed:", err instanceof Error ? err.message : err);
     await prisma.chargeAttempt.update({
       where: { id: attempt.id },
-      data: { status: "FAILED", failureReason: "charge_request_failed" },
+      data: { status: "FAILED", failureReason: "checkout_request_failed" },
     });
-    return apiError("Could not charge that card. Please try again.", 502);
-  }
-
-  // 3DS/OTP-gated account: charge isn't settled — the member must enter the OTP
-  // Nomba sent. Keep the attempt PENDING; it settles once the OTP is submitted
-  // (POST /api/cards/otp) and the webhook lands.
-  if (charge.otpRequired) {
-    return apiSuccess<PayNowRes>({
-      method: "CARD",
-      status: "OTP_REQUIRED",
-      debitedMinor: 0,
-      remainingDueMinor: remainingDue,
-      otp: { orderReference, transactionId: charge.orderId ?? "" },
-    });
+    return apiError("Could not start the card payment. Please try again.", 502);
   }
 
   return apiSuccess<PayNowRes>({
     method: "CARD",
-    status: "CHARGING",
+    status: "CHECKOUT",
     debitedMinor: 0,
     remainingDueMinor: remainingDue,
-    otp: null,
+    checkoutLink: order.checkoutLink,
   });
 }

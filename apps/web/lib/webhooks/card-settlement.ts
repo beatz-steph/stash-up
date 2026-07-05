@@ -3,30 +3,12 @@ import type { WebhookReceipt, ChargeAttempt } from "@workspace/db";
 import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
 import { applyContributionSplit } from "../reconciliation/apply";
-import { creditWallet } from "@/lib/wallet/ledger";
 import { handleWalletCardTopup } from "./wallet-topup";
 import { createNotification } from "@/lib/notifications";
 import { CARD_FEE_RATE } from "@/lib/fees";
-import { isUsableCardToken } from "@/lib/cards/enrollment";
-
-type CardKind = "cardenroll" | "cardverify" | "cardchg";
-
-/** Route a settlement by its orderMetaData.kind, falling back to the
- * orderReference prefix (both are echoed back by Nomba). */
-function deriveKind(
-  meta: Record<string, string> | undefined,
-  orderRef: string
-): CardKind | null {
-  const k = meta?.kind;
-  if (k === "cardenroll" || k === "cardverify" || k === "cardchg") return k;
-  if (orderRef.startsWith("cardenroll_")) return "cardenroll";
-  if (orderRef.startsWith("cardverify_")) return "cardverify";
-  if (orderRef.startsWith("cardchg_")) return "cardchg";
-  return null;
-}
 
 /** Is this a card settlement (vs a VA transfer)? Discriminated by the
- * transaction type Nomba sends for hosted checkout / tokenized-card payments. */
+ * transaction type Nomba sends for hosted-checkout card payments. */
 export function isCardSettlement(payload: NombaWebhookPayload): boolean {
   const type = payload.data?.transaction?.type ?? "";
   return type === "online_checkout" || !!payload.data?.order;
@@ -34,13 +16,11 @@ export function isCardSettlement(payload: NombaWebhookPayload): boolean {
 
 /**
  * Handle a successful card settlement (payment_success, type online_checkout).
- * Three kinds, routed by orderMetaData.kind:
- *  - cardverify: create the SavedCard, bind if the attempt has a membership,
- *    mark SUCCESS + refundStatus PENDING, then refund the ₦50 (best-effort).
- *    The ₦50 is NEVER applied to any pot — it's a verification hold.
- *  - cardenroll: create + bind the SavedCard AND apply the payment as this
- *    cycle's contribution (the enrollment charge IS the contribution).
- *  - cardchg: apply the tokenized-charge payment as a contribution.
+ * Cards are one-time hosted-checkout payments on this account — nothing is
+ * tokenized or saved. Two flavours, routed by orderMetaData.kind / the
+ * orderReference prefix:
+ *  - wallettopup: credit the member's wallet (delegated to wallet-topup).
+ *  - cardchg: apply the payment as this cycle's contribution.
  * Idempotent: guards on the ChargeAttempt status and the InboundTransfer
  * unique (provider, providerEventId).
  */
@@ -49,26 +29,25 @@ export async function handleCardSettlement(
   payload: NombaWebhookPayload
 ): Promise<void> {
   const order = payload.data?.order;
-  const tokenized = payload.data?.tokenizedCardData;
   const transaction = payload.data?.transaction;
 
   const meta = order?.orderMetaData;
   const orderRef = order?.orderReference ?? "";
 
-  // Wallet card top-up: a checkout with no ChargeAttempt — credit the wallet.
+  // Wallet card top-up: a checkout tagged for the wallet — credit the wallet.
   if (meta?.kind === "wallettopup" || orderRef.startsWith("wallettopup_")) {
     await handleWalletCardTopup(receipt, payload);
     return;
   }
 
-  const kind = deriveKind(meta, orderRef);
-  const nombaTxId = transaction?.transactionId ?? "";
-  const amountMinor = Math.round(Number(transaction?.transactionAmount ?? order?.amount ?? 0) * 100);
-
-  if (!kind) {
+  const isContribution = meta?.kind === "cardchg" || orderRef.startsWith("cardchg_");
+  if (!isContribution) {
     console.warn(`[card-webhook] unroutable settlement (ref=${orderRef})`);
     return;
   }
+
+  const nombaTxId = transaction?.transactionId ?? "";
+  const amountMinor = Math.round(Number(transaction?.transactionAmount ?? order?.amount ?? 0) * 100);
 
   // Locate the ChargeAttempt — prefer metadata attemptId, fall back to our ref.
   const attemptId = meta?.attemptId;
@@ -80,45 +59,23 @@ export async function handleCardSettlement(
     attempt = await prisma.chargeAttempt.findUnique({ where: { orderReference: orderRef } });
   }
   if (!attempt) {
-    console.warn(`[card-webhook] no ChargeAttempt for kind=${kind} ref=${orderRef}`);
+    console.warn(`[card-webhook] no ChargeAttempt for cardchg ref=${orderRef}`);
     return;
   }
   if (attempt.status === "SUCCESS") {
     return; // already settled — idempotent no-op
   }
 
-  const tokenKey = tokenized?.tokenKey;
-  const last4 = order?.cardLast4Digits ?? null;
-  const cardType = tokenized?.cardType ?? order?.cardType ?? null;
-
   console.log(
-    `[card-webhook] settling kind=${kind} attempt=${attempt.id} receipt=${receipt.id} amountMinor=${amountMinor}`
+    `[card-webhook] settling cardchg attempt=${attempt.id} receipt=${receipt.id} amountMinor=${amountMinor}`
   );
 
-  if (kind === "cardverify") {
-    const feeMinor = Math.round(Number(transaction?.fee ?? 0) * 100);
-    await settleVerification(attempt, {
-      tokenKey,
-      last4,
-      cardType,
-      nombaTxId,
-      // Credit the NET that actually landed (the fee is surfaced to the customer,
-      // per the fee policy — we never had the fee portion to give back).
-      creditMinor: Math.max(0, amountMinor - feeMinor),
-      feeMinor,
-    });
-    return;
-  }
-
-  // cardenroll / cardchg — money applies to the cycle's pot. Apply the NET that
-  // actually landed (gross charge − Nomba fee); the charge was grossed-up so the
-  // net ≈ the intended contribution. The fee is surfaced, never applied to a pot.
+  // Money applies to the cycle's pot. Apply the NET that actually landed
+  // (gross charge − Nomba fee); the charge was grossed-up so the net ≈ the
+  // intended contribution. The fee is surfaced, never applied to a pot.
   const feeMinor = Math.round(Number(transaction?.fee ?? 0) * 100);
   const netMinor = Math.max(0, amountMinor - feeMinor);
-  await settleContribution(attempt, kind, {
-    tokenKey,
-    last4,
-    cardType,
+  await settleContribution(attempt, {
     nombaTxId,
     netMinor,
     feeMinor,
@@ -127,89 +84,9 @@ export async function handleCardSettlement(
   });
 }
 
-async function settleVerification(
-  attempt: ChargeAttempt,
-  card: {
-    tokenKey?: string;
-    last4: string | null;
-    cardType: string | null;
-    nombaTxId: string;
-    creditMinor: number;
-    feeMinor: number;
-  }
-): Promise<void> {
-  // Nomba's refund API rejects real settled charges in this environment, so the
-  // ₦50 verification hold is returned as wallet store-credit instead (disclosed
-  // to the customer). Everything happens in one tx — card save, mark SUCCESS,
-  // and the wallet credit — so it's atomic and needs no external call.
-  const tokenized = isUsableCardToken(card.tokenKey);
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    let savedCardId: string | null = null;
-    if (tokenized) {
-      const saved = await tx.savedCard.create({
-        data: {
-          userId: attempt.userId,
-          provider: "NOMBA",
-          tokenKey: card.tokenKey!,
-          last4: card.last4,
-          cardType: card.cardType,
-          status: "ACTIVE",
-        },
-      });
-      savedCardId = saved.id;
-      // Path B verification records the membership so we can bind here; the
-      // Settings path (Path C) has no membership → the card binds to nothing.
-      if (attempt.membershipId) {
-        await tx.membership.update({
-          where: { id: attempt.membershipId },
-          data: { autoDebitCardId: saved.id },
-        });
-      }
-    }
-
-    await tx.chargeAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: "SUCCESS",
-        savedCardId,
-        nombaTransactionId: card.nombaTxId,
-        feeMinor: card.feeMinor,
-        settledAt: new Date(),
-        // "REFUNDED" = the hold has been returned (as wallet credit here), so the
-        // sweep's refund-retry never picks it up.
-        refundStatus: "REFUNDED",
-        refundedAt: new Date(),
-      },
-    });
-
-    if (card.creditMinor > 0) {
-      await creditWallet(tx, {
-        userId: attempt.userId,
-        amountMinor: card.creditMinor,
-        source: "REFUND_CREDIT",
-        reference: attempt.id,
-        idempotencyKey: `verify_${attempt.id}`,
-      });
-    }
-  });
-
-  await createNotification({
-    userId: attempt.userId,
-    type: "GENERIC",
-    title: tokenized ? "Card added" : "Card couldn't be saved",
-    body: tokenized
-      ? "Your card was saved. The ₦50 verification charge was added to your StashUp wallet."
-      : "We couldn't save this card for future payments (your bank didn't return a reusable token). The ₦50 was added to your StashUp wallet. Please try adding the card again.",
-  });
-}
-
 export async function settleContribution(
   attempt: ChargeAttempt,
-  kind: "cardenroll" | "cardchg",
   data: {
-    tokenKey?: string;
-    last4: string | null;
-    cardType: string | null;
     nombaTxId: string;
     netMinor: number; // amount that landed in the sub-account (applied to the pot)
     feeMinor: number; // surfaced Nomba card fee (never applied to a pot)
@@ -218,7 +95,7 @@ export async function settleContribution(
   }
 ): Promise<void> {
   if (!attempt.membershipId || !attempt.cycleId) {
-    console.warn(`[card-webhook] ${kind} attempt ${attempt.id} missing membership/cycle`);
+    console.warn(`[card-webhook] cardchg attempt ${attempt.id} missing membership/cycle`);
     return;
   }
 
@@ -273,7 +150,7 @@ export async function settleContribution(
           amountMinor: data.netMinor,
           feeMinor: data.feeMinor,
           currency: data.currency,
-          narration: kind === "cardenroll" ? "Card enrollment" : "Card auto-save",
+          narration: "Card contribution",
           matchStatus: eligible
             ? (result.decision as "MATCHED" | "UNDERPAID" | "OVERPAID")
             : "UNMATCHED",
@@ -287,31 +164,10 @@ export async function settleContribution(
       throw err;
     }
 
-    // Create + bind the SavedCard for enrollment settlements.
-    let savedCardId: string | null = attempt.savedCardId;
-    if (kind === "cardenroll" && isUsableCardToken(data.tokenKey)) {
-      const saved = await tx.savedCard.create({
-        data: {
-          userId: attempt.userId,
-          provider: "NOMBA",
-          tokenKey: data.tokenKey,
-          last4: data.last4,
-          cardType: data.cardType,
-          status: "ACTIVE",
-        },
-      });
-      savedCardId = saved.id;
-      await tx.membership.update({
-        where: { id: membership.id },
-        data: { autoDebitCardId: saved.id },
-      });
-    }
-
     await tx.chargeAttempt.update({
       where: { id: attempt.id },
       data: {
         status: "SUCCESS",
-        savedCardId,
         nombaTransactionId: data.nombaTxId,
         feeMinor: data.feeMinor,
         settledAt: new Date(),
@@ -333,21 +189,17 @@ export async function settleContribution(
   await createNotification({
     userId: attempt.userId,
     type: "GENERIC",
-    title: kind === "cardenroll" ? "Auto-save on" : "Contribution collected",
-    body:
-      kind === "cardenroll"
-        ? "Your card was saved and this cycle's contribution was collected automatically."
-        : "We collected this cycle's contribution from your saved card.",
+    title: "Contribution collected",
+    body: "Your card payment was received and applied to this cycle's contribution.",
   });
 }
 
 /**
- * Verify backstop for a saved-card cycle payment (`cardchg`) whose settlement
+ * Verify backstop for a one-time card cycle payment (`cardchg`) whose settlement
  * webhook was missed. Applies the NET to the cycle's pot using the exact fee/
  * amount when Nomba reports them, else estimates from the grossed charge.
  * Idempotent with the webhook via the shared `card_<attemptId>` InboundTransfer
- * key. Only cardchg (saved card) is settleable here — cardenroll/cardverify
- * need the tokenKey that ONLY the webhook carries, so those still wait for it.
+ * key.
  */
 export async function settleCardChargeFromVerify(
   attempt: ChargeAttempt,
@@ -357,10 +209,7 @@ export async function settleCardChargeFromVerify(
   const feeMinor =
     verify.feeMinor ?? grossMinor - Math.round(grossMinor * (1 - CARD_FEE_RATE));
   const netMinor = Math.max(0, grossMinor - feeMinor);
-  await settleContribution(attempt, "cardchg", {
-    tokenKey: undefined, // saved-card charge — card already exists, nothing to create
-    last4: null,
-    cardType: null,
+  await settleContribution(attempt, {
     nombaTxId: verify.transactionId ?? "",
     netMinor,
     feeMinor,
@@ -371,16 +220,16 @@ export async function settleCardChargeFromVerify(
 
 /**
  * Handle a failed card settlement (payment_failed for a checkout/card order).
- * Marks the attempt FAILED, flags the card EXPIRED on expiry/invalid-card
- * reasons, and notifies the member.
+ * Marks the one-time attempt FAILED and notifies the member. Nothing is saved,
+ * so there's no card to retire.
  */
 export async function handleCardFailure(payload: NombaWebhookPayload): Promise<void> {
   const order = payload.data?.order;
   const transaction = payload.data?.transaction;
   const meta = order?.orderMetaData;
   const orderRef = order?.orderReference ?? "";
-  const kind = deriveKind(meta, orderRef);
-  if (!kind) return;
+  const isContribution = meta?.kind === "cardchg" || orderRef.startsWith("cardchg_");
+  if (!isContribution) return;
 
   const attemptId = meta?.attemptId;
   let attempt =
@@ -393,27 +242,16 @@ export async function handleCardFailure(payload: NombaWebhookPayload): Promise<v
   if (!attempt || attempt.status !== "PENDING") return;
 
   const reason = transaction?.responseCode || "card_charge_failed";
-  const isCardDead = /expir|invalid|declin/i.test(reason);
 
-  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    await tx.chargeAttempt.update({
-      where: { id: attempt!.id },
-      data: { status: "FAILED", failureReason: reason },
-    });
-    if (isCardDead && attempt!.savedCardId) {
-      await tx.savedCard.update({
-        where: { id: attempt!.savedCardId },
-        data: { status: "EXPIRED" },
-      });
-    }
+  await prisma.chargeAttempt.update({
+    where: { id: attempt.id },
+    data: { status: "FAILED", failureReason: reason },
   });
 
   await createNotification({
     userId: attempt.userId,
     type: "GENERIC",
     title: "Card payment failed",
-    body: isCardDead
-      ? "Your saved card could not be charged (it may be expired). Please add a new card."
-      : "We couldn't collect your contribution by card. We'll try again, or you can transfer manually.",
+    body: "We couldn't collect your contribution by card. Please try again, or pay by bank transfer.",
   });
 }

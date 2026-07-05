@@ -11,6 +11,10 @@ import type {
 } from "@/app/api/circles/dto/circles.dto"
 import type { PayNowReq, PayNowRes } from "@/app/api/circles/[id]/pay-now/dto/pay-now.dto"
 import type { SweepCreditRes } from "@/app/api/circles/[id]/sweep-credit/dto/sweep-credit.dto"
+import type {
+  ToggleWalletAutoDebitReq,
+  ToggleWalletAutoDebitRes,
+} from "@/app/api/circles/[id]/auto-debit/wallet/dto/wallet-auto-save.dto"
 
 export type CreateCircleInput = z.infer<typeof CreateCircleReqSchema>
 export type InviteInput = z.infer<typeof InviteReqSchema>
@@ -79,9 +83,20 @@ export function renewCircle(id: string, options?: ApiOptions) {
   return api.post<{ cycleId: string; sequence: number }>(`/api/circles/${id}/renew`, undefined, options)
 }
 
-/** Pay the current cycle's amount due on demand — from wallet or a saved card. */
+/** Pay the current cycle's amount due on demand — from the wallet (instant) or
+ * by card via a one-time hosted-checkout redirect. */
 export function payCircleNow(id: string, body: PayNowReq, options?: ApiOptions) {
   return api.post<PayNowRes>(`/api/circles/${id}/pay-now`, body, options)
+}
+
+/** Opt this circle in/out of wallet auto-save (auto-collection draws only from
+ * the wallet balance — there are no saved cards to auto-debit). */
+export function toggleWalletAutoDebit(
+  id: string,
+  body: ToggleWalletAutoDebitReq,
+  options?: ApiOptions
+) {
+  return api.post<ToggleWalletAutoDebitRes>(`/api/circles/${id}/auto-debit/wallet`, body, options)
 }
 
 /** Move leftover circle credit (buffer) to the wallet — completed circles. */

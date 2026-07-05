@@ -5,7 +5,6 @@ import { serverApiOptions } from "@/lib/api/server"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@workspace/ui/components/card"
 import { DashboardHeader, PageHeading, PageContent } from "../components/dashboard-header"
 import { UpdateWithdrawalAccountDialog } from "@/features/settings/components/update-withdrawal-account-dialog"
-import { SavedCardsSection } from "@/features/cards/components/saved-cards-section"
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -87,10 +86,6 @@ export default async function SettingsPage() {
               )}
             </CardContent>
           </Card>
-
-          <div className="lg:col-span-2">
-            <SavedCardsSection />
-          </div>
         </div>
       </PageContent>
     </div>

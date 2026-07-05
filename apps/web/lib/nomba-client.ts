@@ -457,10 +457,11 @@ const CheckoutOrderResponseSchema = z.object({
 });
 
 /**
- * Create a hosted-checkout order. When `tokenizeCard` is true we force
- * `allowedPaymentMethods: ["Card"]` so the customer can only pay by card
- * (a Transfer/USSD payment would settle the order but tokenize NO card —
- * a silent enrollment failure). `metadata` is echoed back in webhooks.
+ * Create a hosted-checkout order — the ONE card path this account supports.
+ * Card payments are one-time only (no tokenization/saved cards on this
+ * merchant profile), so callers pass `tokenizeCard: false` and restrict the
+ * checkout to `allowedPaymentMethods: ["Card"]` when they want a card-only
+ * page. `metadata` is echoed back in webhooks and is how settlement routes.
  * Returns `{ checkoutLink, orderReference }` — redirect the member there.
  */
 export async function createCheckoutOrder(params: {
@@ -469,6 +470,8 @@ export async function createCheckoutOrder(params: {
   amountMinor: number;
   callbackUrl: string;
   tokenizeCard: boolean;
+  /** Restrict the checkout to these methods (e.g. ["Card"]). Omit to allow all. */
+  allowedPaymentMethods?: string[];
   metadata?: Record<string, string>;
 }) {
   const res = await nombaFetch("/v1/checkout/order", {
@@ -482,7 +485,9 @@ export async function createCheckoutOrder(params: {
         callbackUrl: params.callbackUrl,
         // Card money lands in the same sub-account wallet as VA inflows/payouts.
         accountId: SUB_ACCOUNT_ID,
-        ...(params.tokenizeCard ? { allowedPaymentMethods: ["Card"] } : {}),
+        ...(params.allowedPaymentMethods
+          ? { allowedPaymentMethods: params.allowedPaymentMethods }
+          : {}),
         ...(params.metadata ? { orderMetaData: params.metadata } : {}),
       },
       tokenizeCard: params.tokenizeCard,
@@ -503,219 +508,6 @@ export async function createCheckoutOrder(params: {
     );
   }
   return parsed.data;
-}
-
-const TokenizedChargeResponseSchema = z.object({
-  status: z.boolean(),
-  message: z.string().optional().default(""),
-  // Present on accounts where the charge is 3DS/OTP-gated: the customer is asked
-  // to enter an OTP, and orderId is the transaction handle needed to submit it.
-  orderId: z.string().nullish(),
-  orderReference: z.string().nullish(),
-});
-
-export interface TokenizedChargeResult {
-  /** Nomba's `data.status` — true when the charge was accepted OR an OTP sent. */
-  status: boolean;
-  message: string;
-  /** True when the account runs the tokenized charge through a 3DS/OTP step:
-   *  the charge is NOT settled and needs `submitCardOtp` to complete. */
-  otpRequired: boolean;
-  /** Transaction handle to pass to `submitCardOtp` as `transactionId`. */
-  orderId: string | null;
-  orderReference: string;
-}
-
-/**
- * Charge a previously-tokenized card. Sends `X-Idempotent-key: <orderReference>`
- * so a network-dropped call can be retried without double-charging. The sync
- * response is `{ status, message }` — but on 3DS/OTP-gated accounts a `true`
- * status only means "OTP sent", NOT settled (message asks the customer to enter
- * an OTP). Callers must branch on `otpRequired` and drive `submitCardOtp`.
- * Settlement truth still comes from the webhook / verify backstop.
- * NEVER log `tokenKey` (or any PAN data).
- */
-export async function chargeTokenizedCard(params: {
-  orderReference: string;
-  customerEmail: string;
-  amountMinor: number;
-  tokenKey: string;
-  metadata?: Record<string, string>;
-}) {
-  const res = await nombaFetch("/v1/checkout/tokenized-card-payment", {
-    method: "POST",
-    headers: { "X-Idempotent-key": params.orderReference },
-    body: JSON.stringify({
-      order: {
-        orderReference: params.orderReference,
-        customerEmail: params.customerEmail,
-        amount: koboToNaira(params.amountMinor),
-        currency: "NGN",
-        accountId: SUB_ACCOUNT_ID,
-        ...(params.metadata ? { orderMetaData: params.metadata } : {}),
-      },
-      tokenKey: params.tokenKey,
-    }),
-  });
-
-  if (!res.ok) {
-    // Error body never contains tokenKey — safe to surface.
-    throw new Error(`Tokenized card charge failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const parsed = TokenizedChargeResponseSchema.safeParse(data?.data);
-  if (!parsed.success) {
-    throw new Error(
-      `Tokenized card charge: unexpected Nomba response (code=${data?.code ?? "?"}): ${
-        data?.description ?? "no data field"
-      }`
-    );
-  }
-  const message = parsed.data.message;
-  // 3DS/OTP-gated accounts return status:true with a "enter the OTP" message and
-  // an orderId to complete against. Detect it so callers drive the OTP step
-  // instead of pretending the charge is already settling.
-  const otpRequired = /\botp\b/i.test(message);
-  return {
-    status: parsed.data.status,
-    message,
-    otpRequired,
-    orderId: parsed.data.orderId ?? null,
-    orderReference: parsed.data.orderReference ?? params.orderReference,
-  } satisfies TokenizedChargeResult;
-}
-
-const SubmitOtpResponseSchema = z.object({
-  status: z.boolean(),
-  message: z.string().optional().default(""),
-});
-
-/**
- * Complete a 3DS/OTP-gated tokenized charge by submitting the OTP the customer
- * received. On success Nomba finishes the charge and fires the settlement
- * webhook, which our existing handlers apply. NEVER log the OTP.
- *
- * Nomba returns HTTP 200 with an envelope: `code === "00"` is success; anything
- * else (e.g. "No valid transaction found…", "Invalid OTP") is a business error
- * surfaced via `code`/`message` — we DON'T throw on those so the caller can
- * distinguish a wrong transaction id from a wrong OTP. Only transport failures
- * throw.
- */
-export async function submitCardOtp(params: {
-  otp: string;
-  orderReference: string;
-  transactionId: string;
-}): Promise<{ status: boolean; code: string; message: string }> {
-  const res = await nombaFetch("/v1/checkout/checkout-card-otp", {
-    method: "POST",
-    body: JSON.stringify({
-      otp: params.otp,
-      orderReference: params.orderReference,
-      transactionId: params.transactionId,
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Submit card OTP failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const code = String(data?.code ?? "");
-  const description = String(data?.description ?? "");
-  if (code === "00") {
-    const parsed = SubmitOtpResponseSchema.safeParse(data?.data);
-    return {
-      status: parsed.success ? parsed.data.status : true,
-      code,
-      message: parsed.success ? parsed.data.message : description || "success",
-    };
-  }
-  return { status: false, code, message: description || "OTP submission failed" };
-}
-
-const RefundResponseSchema = z.object({
-  success: z.boolean(),
-  message: z.string().optional().default(""),
-});
-
-/**
- * Refund a settled checkout transaction to source. Keys on Nomba's
- * `transactionId` (captured from the settlement webhook/verify) — NOT our
- * orderReference. Omitting accountNumber/bankCode refunds to the source card.
- */
-export async function refundCheckoutTransaction(params: {
-  transactionId: string;
-  amountMinor: number;
-}) {
-  const res = await nombaFetch("/v1/checkout/refund", {
-    method: "POST",
-    body: JSON.stringify({
-      transactionId: params.transactionId,
-      amount: koboToNaira(params.amountMinor),
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Checkout refund failed: ${res.status} ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const parsed = RefundResponseSchema.safeParse(data?.data);
-  if (!parsed.success) {
-    throw new Error(
-      `Checkout refund: unexpected Nomba response (code=${data?.code ?? "?"}): ${
-        data?.description ?? "no data field"
-      }`
-    );
-  }
-  return parsed.data;
-}
-
-/**
- * Fetch a checkout transaction's details by our orderReference. Used to recover
- * the transaction identifier a 3DS/OTP-gated charge must be completed against —
- * the tokenized-charge response only returns an orderId (which the OTP endpoint
- * rejects), while `transactionDetails` here carries paymentReference /
- * paymentVendorReference. Returns candidate ids (most-likely first) plus the
- * raw detail (card data stripped) for diagnostics. Best-effort: null on failure.
- */
-export async function fetchCheckoutTransactionIds(
-  orderReference: string
-): Promise<{ ids: string[]; debug: Record<string, unknown> | null }> {
-  const qs = new URLSearchParams({ idType: "ORDER_REFERENCE", id: orderReference });
-  const res = await nombaFetch(`/v1/checkout/transaction?${qs.toString()}`);
-  if (!res.ok) {
-    return { ids: [], debug: { httpStatus: res.status } };
-  }
-  const data = await res.json().catch(() => null);
-  const detail = (data?.data ?? null) as Record<string, unknown> | null;
-  const td = (detail?.transactionDetails ?? {}) as Record<string, unknown>;
-  const order = (detail?.order ?? {}) as Record<string, unknown>;
-  const ids: string[] = [];
-  // Order matters: the payment references are the most likely OTP transaction id.
-  for (const v of [td.paymentReference, td.paymentVendorReference, td.transactionId, td.id, order.orderId]) {
-    if (typeof v === "string" && v) ids.push(v);
-  }
-  // Diagnostic view with card data removed (never log PAN/token).
-  const debug = detail
-    ? { order: detail.order, transactionDetails: detail.transactionDetails, statusCode: (detail as Record<string, unknown>).statusCode }
-    : null;
-  return { ids, debug };
-}
-
-/** Delete a stored card token (user removed the card). NEVER log tokenKey. */
-export async function deleteTokenizedCard(tokenKey: string): Promise<boolean> {
-  const res = await nombaFetch("/v1/checkout/tokenized-card-data", {
-    method: "DELETE",
-    body: JSON.stringify({ tokenKey }),
-  });
-
-  if (!res.ok) {
-    // Error body never contains tokenKey — safe to surface.
-    throw new Error(`Delete tokenized card failed: ${res.status} ${await res.text()}`);
-  }
-  return true;
 }
 
 const CheckoutTransactionSchema = z

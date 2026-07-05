@@ -3,7 +3,7 @@ import { POST } from "./route";
 import { prisma } from "@workspace/db";
 import { getSession } from "@/lib/session";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { chargeTokenizedCard, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import { createCheckoutOrder, verifyCheckoutTransaction } from "@/lib/nomba-client";
 import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { createMockSession } from "@test/mocks/auth";
@@ -11,7 +11,7 @@ import { NextRequest } from "next/server";
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
-vi.mock("@/lib/nomba-client", () => ({ chargeTokenizedCard: vi.fn(), verifyCheckoutTransaction: vi.fn() }));
+vi.mock("@/lib/nomba-client", () => ({ createCheckoutOrder: vi.fn(), verifyCheckoutTransaction: vi.fn() }));
 vi.mock("@/lib/webhooks/card-settlement", () => ({ settleCardChargeFromVerify: vi.fn() }));
 vi.mock("@/lib/wallet/waterfall", () => ({ collectFromWallet: vi.fn() }));
 vi.mock("@workspace/db", () => ({
@@ -19,7 +19,6 @@ vi.mock("@workspace/db", () => ({
     membership: { findUnique: vi.fn() },
     circle: { findUnique: vi.fn() },
     cycle: { findUnique: vi.fn() },
-    savedCard: { findUnique: vi.fn(), update: vi.fn() },
     chargeAttempt: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
 }));
@@ -48,15 +47,13 @@ beforeEach(() => {
     status: "OPEN",
     contributions: [{ amountMinor: 600_000 }], // paid 6k of 10k → owes 4k
   } as never);
-  vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
-    id: "card1",
-    userId: "u1",
-    status: "ACTIVE",
-    tokenKey: "SECRET",
-  } as never);
   vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.chargeAttempt.create).mockResolvedValue({ id: "att1" } as never);
   vi.mocked(collectFromWallet).mockResolvedValue({ debitedMinor: 400_000, remainingDueMinor: 0 });
+  vi.mocked(createCheckoutOrder).mockResolvedValue({
+    checkoutLink: "https://pay.nomba/abc",
+    orderReference: "cardchg_x",
+  } as never);
 });
 
 describe("POST /api/circles/[id]/pay-now", () => {
@@ -72,7 +69,7 @@ describe("POST /api/circles/[id]/pay-now", () => {
 
   it("422 without a valid method", async () => {
     expect((await POST(req({}), params)).status).toBe(422);
-    expect((await POST(req({ method: "CARD" }), params)).status).toBe(422); // missing savedCardId
+    expect((await POST(req({ method: "NOPE" }), params)).status).toBe(422);
   });
 
   it("409 when already paid up this cycle", async () => {
@@ -93,7 +90,7 @@ describe("POST /api/circles/[id]/pay-now", () => {
       expect(collectFromWallet).toHaveBeenCalledWith(
         expect.objectContaining({ userId: "u1", membershipId: "m1", cycleId: "cyc1", contributionMinor: 1_000_000 })
       );
-      expect(chargeTokenizedCard).not.toHaveBeenCalled();
+      expect(createCheckoutOrder).not.toHaveBeenCalled();
     });
 
     it("400 when the wallet is empty", async () => {
@@ -103,66 +100,34 @@ describe("POST /api/circles/[id]/pay-now", () => {
   });
 
   describe("CARD", () => {
-    it("charges the saved card grossed-up for the remaining due", async () => {
-      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
-      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+    it("starts a card-only hosted checkout grossed-up for the remaining due", async () => {
+      const res = await POST(req({ method: "CARD" }), params);
       expect(res.status).toBe(200);
       const { data } = await res.json();
-      expect(data).toMatchObject({ method: "CARD", status: "CHARGING", remainingDueMinor: 400_000 });
+      expect(data).toMatchObject({
+        method: "CARD",
+        status: "CHECKOUT",
+        remainingDueMinor: 400_000,
+        checkoutLink: "https://pay.nomba/abc",
+      });
 
-      const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
-      expect(chargeArg.tokenKey).toBe("SECRET");
-      expect(chargeArg.amountMinor).toBe(405_680); // ceil(400000 / (1 − 0.014))
-      expect(chargeArg.metadata).toMatchObject({ kind: "cardchg", cycleId: "cyc1", membershipId: "m1" });
+      const orderArg = vi.mocked(createCheckoutOrder).mock.calls[0]![0];
+      expect(orderArg.tokenizeCard).toBe(false);
+      expect(orderArg.allowedPaymentMethods).toEqual(["Card"]);
+      expect(orderArg.amountMinor).toBe(405_680); // ceil(400000 / (1 − 0.014))
+      expect(orderArg.metadata).toMatchObject({ kind: "cardchg", cycleId: "cyc1", membershipId: "m1" });
       expect(collectFromWallet).not.toHaveBeenCalled();
     });
 
-    it("returns OTP_REQUIRED (with a handle) when the charge is 3DS-gated", async () => {
-      vi.mocked(chargeTokenizedCard).mockResolvedValue({
-        status: true,
-        message: "Kindly enter the OTP sent to 0916*****15",
-        otpRequired: true,
-        orderId: "ord-123",
-        orderReference: "cardchg_x",
-      });
-      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
-      expect(res.status).toBe(200);
-      const { data } = await res.json();
-      expect(data.status).toBe("OTP_REQUIRED");
-      expect(data.otp).toMatchObject({ transactionId: "ord-123" });
-      expect(data.otp.orderReference).toMatch(/^cardchg_/);
-      // The attempt stays PENDING (not FAILED) — it completes after OTP submit.
-      expect(prisma.chargeAttempt.update).not.toHaveBeenCalled();
-    });
-
-    it("409 + retires a placeholder-token card (never truly tokenized)", async () => {
-      vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
-        id: "card1", userId: "u1", status: "ACTIVE", tokenKey: "N/A",
-      } as never);
-      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
-      expect(res.status).toBe(409);
-      expect(chargeTokenizedCard).not.toHaveBeenCalled();
-      expect(prisma.savedCard.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: "card1" }, data: { status: "EXPIRED" } })
-      );
-    });
-
-    it("404 when the card isn't the user's", async () => {
-      vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
-        id: "card1", userId: "someone-else", status: "ACTIVE", tokenKey: "X",
-      } as never);
-      expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(404);
-    });
-
-    it("409 when a card charge is genuinely still in flight", async () => {
+    it("409 when a card payment is genuinely still in flight", async () => {
       vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({
         id: "pending", orderReference: "cardchg_x", purpose: "CONTRIBUTION",
       } as never);
       vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
         settled: false, status: "PENDING", transactionId: null, feeMinor: null, amountMinor: null,
       });
-      expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(409);
-      expect(chargeTokenizedCard).not.toHaveBeenCalled();
+      expect((await POST(req({ method: "CARD" }), params)).status).toBe(409);
+      expect(createCheckoutOrder).not.toHaveBeenCalled();
     });
 
     it("self-heals a stuck PENDING attempt that Nomba says already settled", async () => {
@@ -173,15 +138,15 @@ describe("POST /api/circles/[id]/pay-now", () => {
       vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
         settled: true, status: "SUCCESS", transactionId: "TX", feeMinor: 5_680, amountMinor: 405_680,
       });
-      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      const res = await POST(req({ method: "CARD" }), params);
       expect(res.status).toBe(200);
       const { data } = await res.json();
-      expect(data).toMatchObject({ method: "CARD", status: "CHARGING", remainingDueMinor: 0 });
+      expect(data).toMatchObject({ method: "CARD", status: "CHECKOUT", remainingDueMinor: 0 });
       expect(settleCardChargeFromVerify).toHaveBeenCalled();
-      expect(chargeTokenizedCard).not.toHaveBeenCalled(); // no double charge
+      expect(createCheckoutOrder).not.toHaveBeenCalled(); // no double charge
     });
 
-    it("unblocks a fresh charge when the stuck attempt definitively failed", async () => {
+    it("unblocks a fresh checkout when the stuck attempt definitively failed", async () => {
       vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({
         id: "pending", orderReference: "cardchg_x", purpose: "CONTRIBUTION",
         cycleId: "cyc1", membershipId: "m1", amountMinor: 405_680,
@@ -189,19 +154,18 @@ describe("POST /api/circles/[id]/pay-now", () => {
       vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
         settled: false, status: "FAILED", transactionId: null, feeMinor: null, amountMinor: null,
       });
-      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
-      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      const res = await POST(req({ method: "CARD" }), params);
       expect(res.status).toBe(200);
       expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
       );
-      expect(chargeTokenizedCard).toHaveBeenCalled(); // fresh charge proceeded
+      expect(createCheckoutOrder).toHaveBeenCalled(); // fresh checkout proceeded
     });
 
-    it("502 and marks the attempt FAILED when the charge throws", async () => {
-      vi.mocked(chargeTokenizedCard).mockRejectedValue(new Error("nomba down"));
+    it("502 and marks the attempt FAILED when the checkout call throws", async () => {
+      vi.mocked(createCheckoutOrder).mockRejectedValue(new Error("nomba down"));
       vi.mocked(prisma.chargeAttempt.update).mockResolvedValue({} as never);
-      expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(502);
+      expect((await POST(req({ method: "CARD" }), params)).status).toBe(502);
       expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
       );
@@ -209,7 +173,7 @@ describe("POST /api/circles/[id]/pay-now", () => {
 
     it("503 when Nomba is disabled", async () => {
       vi.mocked(isNombaIntegrationDisabled).mockResolvedValue(true);
-      expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(503);
+      expect((await POST(req({ method: "CARD" }), params)).status).toBe(503);
     });
   });
 });

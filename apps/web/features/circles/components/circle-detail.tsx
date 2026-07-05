@@ -5,7 +5,7 @@ import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, us
 import { InviteMemberDialog } from "./invite-member-form"
 import { CycleHistory } from "./cycle-history"
 import { PayNowDialog } from "./pay-now-dialog"
-import { AutoSaveBlock } from "@/features/cards/components/auto-save-block"
+import { WalletAutoSaveBlock } from "./wallet-auto-save-block"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 import { Loader2, Copy, Check, Landmark } from "lucide-react"
@@ -569,11 +569,10 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 )}
               </div>
 
-              {/* Automatic: wallet-first + saved card */}
+              {/* Automatic: wallet auto-save (no saved cards) */}
               <div className="p-5">
-                <AutoSaveBlock
+                <WalletAutoSaveBlock
                   circleId={circle.id}
-                  autoDebitCardId={circle.myAutoDebitCardId ?? null}
                   autoDebitWallet={circle.myAutoDebitWallet ?? false}
                 />
               </div>

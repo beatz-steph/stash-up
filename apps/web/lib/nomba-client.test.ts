@@ -3,8 +3,6 @@ import {
   resolveBankAccount,
   decideTokenAction,
   createCheckoutOrder,
-  chargeTokenizedCard,
-  refundCheckoutTransaction,
   koboToNaira,
 } from "./nomba-client";
 
@@ -87,34 +85,36 @@ describe("Card rails", () => {
     } as unknown as Response);
   }
 
-  it("createCheckoutOrder forces Card-only, sub-account, and naira amount when tokenizing", async () => {
+  it("createCheckoutOrder restricts to Card when allowedPaymentMethods is passed, with sub-account + naira amount", async () => {
     const fetchSpy = vi.spyOn(global, "fetch");
     mockTokenThen(fetchSpy, {
-      data: { checkoutLink: "https://pay.nomba/abc", orderReference: "cardenroll_1" },
+      data: { checkoutLink: "https://pay.nomba/abc", orderReference: "cardchg_1" },
     });
 
     const res = await createCheckoutOrder({
-      orderReference: "cardenroll_1",
+      orderReference: "cardchg_1",
       customerEmail: "a@b.com",
       amountMinor: 1_000_000, // ₦10,000
       callbackUrl: "https://app/cb",
-      tokenizeCard: true,
-      metadata: { kind: "cardenroll", userId: "u1" },
+      tokenizeCard: false,
+      allowedPaymentMethods: ["Card"],
+      metadata: { kind: "cardchg", userId: "u1" },
     });
 
     expect(res.checkoutLink).toBe("https://pay.nomba/abc");
     const call = fetchSpy.mock.calls[1]!;
     expect(call[0]).toContain("/v1/checkout/order");
     const body = JSON.parse((call[1]?.body as string) ?? "{}");
-    expect(body.tokenizeCard).toBe(true);
+    // One-time charge — never tokenize, but keep the checkout card-only.
+    expect(body.tokenizeCard).toBe(false);
     expect(body.order.allowedPaymentMethods).toEqual(["Card"]);
     expect(body.order.currency).toBe("NGN");
     expect(body.order.amount).toBe(10_000); // kobo → naira
     expect(body.order.accountId).toBe(process.env.NOMBA_SUB_ACCOUNT_ID);
-    expect(body.order.orderMetaData).toEqual({ kind: "cardenroll", userId: "u1" });
+    expect(body.order.orderMetaData).toEqual({ kind: "cardchg", userId: "u1" });
   });
 
-  it("createCheckoutOrder omits allowedPaymentMethods when not tokenizing", async () => {
+  it("createCheckoutOrder omits allowedPaymentMethods when not provided", async () => {
     const fetchSpy = vi.spyOn(global, "fetch");
     mockTokenThen(fetchSpy, {
       data: { checkoutLink: "https://pay.nomba/x", orderReference: "o" },
@@ -131,45 +131,6 @@ describe("Card rails", () => {
     const body = JSON.parse((fetchSpy.mock.calls[1]![1]?.body as string) ?? "{}");
     expect(body.order.allowedPaymentMethods).toBeUndefined();
     expect(body.tokenizeCard).toBe(false);
-  });
-
-  it("chargeTokenizedCard sends X-Idempotent-key and never exposes tokenKey in the header", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch");
-    mockTokenThen(fetchSpy, { data: { status: true, message: "ok" } });
-
-    const res = await chargeTokenizedCard({
-      orderReference: "cardchg_c1_m1_a1",
-      customerEmail: "a@b.com",
-      amountMinor: 250_000,
-      tokenKey: "SECRET_TOKEN_KEY",
-      metadata: { kind: "cardchg" },
-    });
-
-    expect(res.status).toBe(true);
-    const call = fetchSpy.mock.calls[1]!;
-    expect(call[0]).toContain("/v1/checkout/tokenized-card-payment");
-    const headers = (call[1]?.headers as Record<string, string>) || {};
-    expect(headers["X-Idempotent-key"]).toBe("cardchg_c1_m1_a1");
-    // tokenKey travels only in the request body, never in headers.
-    expect(JSON.stringify(headers)).not.toContain("SECRET_TOKEN_KEY");
-    const body = JSON.parse((call[1]?.body as string) ?? "{}");
-    expect(body.tokenKey).toBe("SECRET_TOKEN_KEY");
-    expect(body.order.amount).toBe(2500);
-  });
-
-  it("refundCheckoutTransaction keys on transactionId with a naira amount", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch");
-    mockTokenThen(fetchSpy, { data: { success: true, message: "refunded" } });
-
-    const res = await refundCheckoutTransaction({ transactionId: "txn_123", amountMinor: 5000 });
-
-    expect(res.success).toBe(true);
-    const call = fetchSpy.mock.calls[1]!;
-    expect(call[0]).toContain("/v1/checkout/refund");
-    const body = JSON.parse((call[1]?.body as string) ?? "{}");
-    expect(body.transactionId).toBe("txn_123");
-    expect(body.amount).toBe(50); // ₦50
-    expect(body.accountNumber).toBeUndefined(); // refund to source
   });
 
   it("koboToNaira converts minor units to naira", () => {

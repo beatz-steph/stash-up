@@ -1,19 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  isCardSettlement,
-  handleCardSettlement,
-} from "./card-settlement";
+import { isCardSettlement, handleCardSettlement } from "./card-settlement";
 import { prisma } from "@workspace/db";
-import { creditWallet } from "@/lib/wallet/ledger";
 import type { NombaWebhookPayload } from "./verify";
 import type { WebhookReceipt } from "@workspace/db";
 
-vi.mock("@/lib/wallet/ledger", () => ({ creditWallet: vi.fn() }));
 vi.mock("@/lib/notifications", () => ({ createNotification: vi.fn() }));
 
 // tx mock shared across $transaction invocations
 const tx = {
-  savedCard: { create: vi.fn() },
   membership: { update: vi.fn() },
   chargeAttempt: { update: vi.fn() },
   inboundTransfer: { create: vi.fn() },
@@ -29,43 +23,18 @@ vi.mock("@workspace/db", () => ({
     circle: { findUnique: vi.fn() },
     cycle: { findUnique: vi.fn() },
     contribution: { findUnique: vi.fn() },
-    savedCard: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
 
 const receipt = { id: "r1", providerEventId: "evt1" } as WebhookReceipt;
 
-function verifyPayload(over: Partial<Record<string, unknown>> = {}): NombaWebhookPayload {
+/** A one-time card cycle payment (`cardchg`). */
+function chargePayload(): NombaWebhookPayload {
   return {
     event_type: "payment_success",
     requestId: "evt1",
     data: {
-      tokenizedCardData: { tokenKey: "TK1230000", cardType: "Verve" },
-      transaction: {
-        type: "online_checkout",
-        transactionId: "TX1",
-        transactionAmount: 50,
-        time: "2026-07-04T14:44:47Z",
-      },
-      order: {
-        orderReference: "cardverify_u1_n1",
-        orderMetaData: { kind: "cardverify", userId: "u1", attemptId: "att1" },
-        cardLast4Digits: "5417",
-        amount: 50,
-        currency: "NGN",
-      },
-    },
-    ...over,
-  } as NombaWebhookPayload;
-}
-
-function enrollPayload(kind: "cardenroll" | "cardchg"): NombaWebhookPayload {
-  return {
-    event_type: "payment_success",
-    requestId: "evt1",
-    data: {
-      tokenizedCardData: { tokenKey: "TK9990000", cardType: "Visa" },
       transaction: {
         type: "online_checkout",
         transactionId: "TX9",
@@ -73,8 +42,8 @@ function enrollPayload(kind: "cardenroll" | "cardchg"): NombaWebhookPayload {
         time: "2026-07-04T14:44:47Z",
       },
       order: {
-        orderReference: `${kind}_cyc1_m1_x`,
-        orderMetaData: { kind, userId: "u1", membershipId: "m1", cycleId: "cyc1", attemptId: "att2" },
+        orderReference: "cardchg_cyc1_m1_x",
+        orderMetaData: { kind: "cardchg", userId: "u1", membershipId: "m1", cycleId: "cyc1", attemptId: "att2" },
         cardLast4Digits: "4242",
         amount: 10000,
         currency: "NGN",
@@ -88,19 +57,17 @@ beforeEach(() => {
   vi.mocked(prisma.$transaction).mockImplementation(async (fn: unknown) =>
     (fn as (t: typeof tx) => unknown)(tx)
   );
-  tx.savedCard.create.mockResolvedValue({ id: "card1" });
   tx.cycle.update.mockResolvedValue({
     id: "cyc1",
     potCollectedMinor: 1_000_000,
     potExpectedMinor: 1_000_000,
     status: "OPEN",
   });
-  vi.mocked(creditWallet).mockResolvedValue({ applied: true, balanceAfterMinor: 0 });
 });
 
 describe("isCardSettlement", () => {
   it("detects online_checkout / order-bearing payloads", () => {
-    expect(isCardSettlement(verifyPayload())).toBe(true);
+    expect(isCardSettlement(chargePayload())).toBe(true);
     expect(
       isCardSettlement({
         event_type: "payment_success",
@@ -111,61 +78,7 @@ describe("isCardSettlement", () => {
   });
 });
 
-describe("handleCardSettlement — verification", () => {
-  it("creates the card, binds the membership, marks SUCCESS, and credits the ₦50 to the wallet", async () => {
-    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
-      id: "att1",
-      userId: "u1",
-      membershipId: "m1",
-      cycleId: null,
-      amountMinor: 5000,
-      status: "PENDING",
-      savedCardId: null,
-    } as never);
-
-    await handleCardSettlement(receipt, verifyPayload());
-
-    expect(tx.savedCard.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ userId: "u1", tokenKey: "TK1230000", last4: "5417" }) })
-    );
-    expect(tx.membership.update).toHaveBeenCalledWith({
-      where: { id: "m1" },
-      data: { autoDebitCardId: "card1" },
-    });
-    expect(tx.chargeAttempt.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "SUCCESS", refundStatus: "REFUNDED" }) })
-    );
-    // ₦50 goes to the wallet (store credit), NEVER to a pot.
-    expect(creditWallet).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({ userId: "u1", amountMinor: 5000, source: "REFUND_CREDIT", idempotencyKey: "verify_att1" })
-    );
-    expect(tx.contribution.upsert).not.toHaveBeenCalled();
-  });
-
-  it("does not bind when the attempt has no membership (Settings path)", async () => {
-    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
-      id: "att1",
-      userId: "u1",
-      membershipId: null,
-      cycleId: null,
-      amountMinor: 5000,
-      status: "PENDING",
-      savedCardId: null,
-    } as never);
-
-    await handleCardSettlement(receipt, verifyPayload());
-    expect(tx.savedCard.create).toHaveBeenCalled();
-    expect(tx.membership.update).not.toHaveBeenCalled();
-    // Still credited from the Settings path.
-    expect(creditWallet).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({ source: "REFUND_CREDIT", amountMinor: 5000 })
-    );
-  });
-});
-
-describe("handleCardSettlement — enrollment", () => {
+describe("handleCardSettlement — cardchg contribution", () => {
   beforeEach(() => {
     vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
       id: "att2",
@@ -174,7 +87,6 @@ describe("handleCardSettlement — enrollment", () => {
       cycleId: "cyc1",
       amountMinor: 1_000_000,
       status: "PENDING",
-      savedCardId: null,
     } as never);
     vi.mocked(prisma.membership.findUnique).mockResolvedValue({ id: "m1", circleId: "c1" } as never);
     vi.mocked(prisma.circle.findUnique).mockResolvedValue({
@@ -191,44 +103,25 @@ describe("handleCardSettlement — enrollment", () => {
     vi.mocked(prisma.contribution.findUnique).mockResolvedValue(null);
   });
 
-  it("records a CARD inbound transfer, saves+binds the card, and applies the contribution", async () => {
-    await handleCardSettlement(receipt, enrollPayload("cardenroll"));
+  it("records a CARD inbound transfer and applies the contribution (no card saved)", async () => {
+    await handleCardSettlement(receipt, chargePayload());
 
     expect(tx.inboundTransfer.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ source: "CARD", providerEventId: "card_att2", matchStatus: "MATCHED" }),
       })
     );
-    expect(tx.savedCard.create).toHaveBeenCalled();
-    expect(tx.membership.update).toHaveBeenCalledWith({
-      where: { id: "m1" },
-      data: { autoDebitCardId: "card1" },
-    });
     expect(tx.contribution.upsert).toHaveBeenCalled();
     expect(tx.chargeAttempt.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "SUCCESS" }) })
     );
-  });
-
-  it("charge settlement applies the contribution without creating a card", async () => {
-    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
-      id: "att2",
-      userId: "u1",
-      membershipId: "m1",
-      cycleId: "cyc1",
-      amountMinor: 1_000_000,
-      status: "PENDING",
-      savedCardId: "existing-card",
-    } as never);
-
-    await handleCardSettlement(receipt, enrollPayload("cardchg"));
-    expect(tx.savedCard.create).not.toHaveBeenCalled();
-    expect(tx.contribution.upsert).toHaveBeenCalled();
+    // Cards are never saved — no membership binding.
+    expect(tx.membership.update).not.toHaveBeenCalled();
   });
 
   it("applies the NET (gross − fee) to the pot and records the surfaced fee", async () => {
     // Grossed-up ₦10,142 charge; Nomba takes a ₦142 fee → exactly ₦10,000 lands.
-    const feeBearing = enrollPayload("cardchg");
+    const feeBearing = chargePayload();
     feeBearing.data!.transaction!.transactionAmount = 10142;
     (feeBearing.data!.transaction as { fee?: number }).fee = 142;
 
@@ -254,16 +147,25 @@ describe("handleCardSettlement — enrollment", () => {
 describe("handleCardSettlement — guards", () => {
   it("is a no-op when the attempt is already SUCCESS", async () => {
     vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
-      id: "att1",
+      id: "att2",
       status: "SUCCESS",
     } as never);
-    await handleCardSettlement(receipt, verifyPayload());
+    await handleCardSettlement(receipt, chargePayload());
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("is a no-op when no ChargeAttempt is found", async () => {
     vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue(null);
-    await handleCardSettlement(receipt, verifyPayload());
+    await handleCardSettlement(receipt, chargePayload());
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("ignores an unroutable settlement (unknown kind)", async () => {
+    const unknown = chargePayload();
+    unknown.data!.order!.orderReference = "mystery_1";
+    unknown.data!.order!.orderMetaData = {};
+    await handleCardSettlement(receipt, unknown);
+    expect(prisma.chargeAttempt.findUnique).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

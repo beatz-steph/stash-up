@@ -106,8 +106,6 @@ export const CircleDetailResSchema = z.object({
   cycles: z.array(CycleHistorySchema).optional(),
   // The requesting member's carried-over credit (auto-applied to their next contribution).
   myBufferMinor: z.number().int().optional(),
-  // The saved card auto-debiting THIS circle for the requesting member (null = off).
-  myAutoDebitCardId: z.string().nullable().optional(),
   // Whether the requesting member opted into wallet auto-save for THIS circle.
   myAutoDebitWallet: z.boolean().optional(),
 });

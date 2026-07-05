@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2, Wallet, CreditCard, Plus } from "lucide-react"
+import { Loader2, Wallet, CreditCard } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -15,18 +15,11 @@ import { Button } from "@workspace/ui/components/button"
 import { formatNaira } from "@/lib/money"
 import { cardFeeOn } from "@/lib/fees"
 import { useWallet } from "@/features/wallet/queries"
-import { useCards } from "@/features/cards/queries"
-import { useEnrollCard } from "@/features/cards/mutations"
-import { CardOtpDialog, type CardOtpHandle } from "@/features/cards/components/card-otp-dialog"
 import { usePayCircleNow } from "../mutations"
 
-function cardLabel(cardType: string | null, last4: string | null): string {
-  const brand = cardType ? cardType.charAt(0).toUpperCase() + cardType.slice(1).toLowerCase() : "Card"
-  return last4 ? `${brand} ···· ${last4}` : brand
-}
-
-/** Pay the current cycle's amount due on demand — wallet (instant) or a saved
- * card (settles via webhook). Fixed amount = what's still owed this cycle. */
+/** Pay the current cycle's amount due on demand — from the wallet (instant) or
+ * by card via a one-time hosted checkout (cards are never saved). Fixed amount
+ * = what's still owed this cycle. */
 export function PayNowDialog({
   circleId,
   amountDueMinor,
@@ -36,43 +29,22 @@ export function PayNowDialog({
 }) {
   const [open, setOpen] = useState(false)
   const { data: wallet } = useWallet()
-  const { data: cards } = useCards()
-  const enroll = useEnrollCard()
   const payNow = usePayCircleNow(circleId)
-  const [selectedCardId, setSelectedCardId] = useState("")
-  // 3DS/OTP-gated card charge: handle to finish it in CardOtpDialog.
-  const [otpHandle, setOtpHandle] = useState<CardOtpHandle | null>(null)
 
   const balanceMinor = wallet?.balanceMinor ?? 0
   const walletCovers = Math.min(balanceMinor, amountDueMinor)
   const walletPartial = balanceMinor > 0 && balanceMinor < amountDueMinor
 
-  const activeCards = cards?.filter((c) => c.status === "ACTIVE") ?? []
-  const effectiveCardId = selectedCardId || activeCards[0]?.id || ""
-
   function payWallet() {
-    payNow.mutate(
-      { method: "WALLET" },
-      { onSuccess: () => setOpen(false) }
-    )
+    payNow.mutate({ method: "WALLET" }, { onSuccess: () => setOpen(false) })
   }
 
   function payCard() {
-    if (!effectiveCardId) return
-    payNow.mutate(
-      { method: "CARD", savedCardId: effectiveCardId },
-      {
-        onSuccess: (res) => {
-          setOpen(false)
-          // 3DS-gated: hand off to the OTP step to complete the charge.
-          if (res.status === "OTP_REQUIRED" && res.otp) setOtpHandle(res.otp)
-        },
-      }
-    )
+    // Redirects to Nomba's hosted checkout on success.
+    payNow.mutate({ method: "CARD" })
   }
 
   return (
-    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="rounded-su-pill">Pay now</Button>
@@ -121,74 +93,28 @@ export function PayNowDialog({
             </Button>
           </TabsContent>
 
-          {/* Card — charge a saved card, settles via webhook */}
+          {/* Card — one-time hosted checkout, settles via webhook */}
           <TabsContent value="card" className="space-y-3 pt-2">
-            {activeCards.length > 0 ? (
-              <>
-                <div className="space-y-1.5">
-                  {activeCards.map((card) => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onClick={() => setSelectedCardId(card.id)}
-                      className={`flex w-full items-center gap-3 rounded-su-lg border p-3 text-left transition-colors ${
-                        effectiveCardId === card.id
-                          ? "border-su-primary bg-su-primary/5"
-                          : "border-su-hairline hover:bg-su-surface"
-                      }`}
-                    >
-                      <CreditCard className="h-4 w-4 shrink-0 text-su-muted" />
-                      <span className="font-su-sans text-su-body-sm text-su-ink">
-                        {cardLabel(card.cardType, card.last4)}
-                      </span>
-                      {effectiveCardId === card.id && (
-                        <span className="ml-auto font-su-sans text-su-caption font-semibold text-su-primary">
-                          Selected
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <p className="font-su-sans text-su-caption text-su-muted">
-                  You&apos;ll be charged {formatNaira(amountDueMinor + cardFeeOn(amountDueMinor))}{" "}
-                  (incl. {formatNaira(cardFeeOn(amountDueMinor))} card fee); {formatNaira(amountDueMinor)}{" "}
-                  goes to your contribution.
-                </p>
-                <Button
-                  className="w-full rounded-su-pill"
-                  disabled={!effectiveCardId || payNow.isPending}
-                  onClick={payCard}
-                >
-                  {payNow.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Pay {formatNaira(amountDueMinor)} with card
-                </Button>
-              </>
-            ) : (
-              <div className="space-y-3 py-2">
-                <p className="font-su-sans text-su-body-sm text-su-muted">
-                  You don&apos;t have a saved card yet. Add one to pay by card.
-                </p>
-                <Button
-                  variant="outline"
-                  className="w-full rounded-su-pill"
-                  disabled={enroll.isPending}
-                  onClick={() => enroll.mutate({ circleId })}
-                >
-                  {enroll.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Plus className="mr-2 h-4 w-4" />
-                  )}
-                  Add a card
-                </Button>
-              </div>
-            )}
+            <p className="font-su-sans text-su-caption text-su-muted">
+              You&apos;ll enter your card on Nomba&apos;s secure checkout. Your card details are
+              never stored.
+            </p>
+            <p className="font-su-sans text-su-caption text-su-muted">
+              You&apos;ll be charged {formatNaira(amountDueMinor + cardFeeOn(amountDueMinor))}{" "}
+              (incl. {formatNaira(cardFeeOn(amountDueMinor))} card fee); {formatNaira(amountDueMinor)}{" "}
+              goes to your contribution.
+            </p>
+            <Button
+              className="w-full rounded-su-pill"
+              disabled={payNow.isPending}
+              onClick={payCard}
+            >
+              {payNow.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Pay {formatNaira(amountDueMinor)} with card
+            </Button>
           </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
-
-    <CardOtpDialog handle={otpHandle} onClose={() => setOtpHandle(null)} />
-    </>
   )
 }

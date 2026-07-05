@@ -7,7 +7,7 @@ import { collectFromWallet } from "@/lib/wallet/waterfall";
 import {
   ToggleWalletAutoDebitReqSchema,
   type ToggleWalletAutoDebitRes,
-} from "@/app/api/cards/dto/cards.dto";
+} from "./dto/wallet-auto-save.dto";
 
 /**
  * Opt this circle in/out of wallet auto-save. When turning it ON and the member

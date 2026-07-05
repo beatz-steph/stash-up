@@ -14,6 +14,7 @@ import {
   renewCircle,
   payCircleNow,
   sweepCircleCredit,
+  toggleWalletAutoDebit,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
@@ -183,25 +184,51 @@ export function useRenewCircle(circleId: string) {
   })
 }
 
-/** Pay the current cycle's due amount now — from wallet (instant) or card
- * (settles shortly via webhook). Refreshes the circle + wallet. */
+/** Pay the current cycle's due amount now — from the wallet (instant) or by
+ * card via a one-time hosted-checkout redirect. WALLET applies immediately;
+ * CARD returns a checkoutLink we send the browser to (it returns via callback,
+ * and the settlement webhook applies the contribution). */
 export function usePayCircleNow(circleId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: PayNowReq) => payCircleNow(circleId, body),
     onSuccess: (res) => {
+      // Card: leave the app for Nomba's secure checkout.
+      if (res.status === "CHECKOUT" && res.checkoutLink) {
+        window.location.href = res.checkoutLink
+        return
+      }
       queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
       queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
-      // OTP_REQUIRED: the OTP dialog opens next — don't imply it's already done.
-      if (res.status === "OTP_REQUIRED") return
-      toast.success(
-        res.status === "APPLIED"
-          ? "Paid from your wallet"
-          : "Charging your card — your contribution updates once it's confirmed"
-      )
+      toast.success("Paid from your wallet")
     },
     onError: (error) => {
       toast.error(error.message || "Could not complete the payment")
+    },
+  })
+}
+
+/** Opt this circle in/out of wallet auto-save. Auto-collection draws only from
+ * the wallet balance; turning it on may immediately collect this cycle. */
+export function useToggleWalletAutoDebit(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (enabled: boolean) => toggleWalletAutoDebit(circleId, { enabled }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      if (res.autoDebitWallet) {
+        toast.success(
+          res.collectedMinor > 0
+            ? "Wallet auto-save on — collected this cycle from your wallet"
+            : "Wallet auto-save on for this circle"
+        )
+      } else {
+        toast.success("Wallet auto-save off for this circle")
+      }
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not update wallet auto-save")
     },
   })
 }

@@ -30,33 +30,21 @@ export const WalletVirtualAccountResSchema = WalletVirtualAccountSchema;
 export type WalletVirtualAccountRes = z.infer<typeof WalletVirtualAccountResSchema>;
 
 /** POST /api/wallet/topup — start a card top-up. amountMinor is what the user
- * wants credited; they pay amountMinor + card fee. Pass `savedCardId` to charge
- * an existing saved card (server-initiated); omit it for a new card (hosted
- * checkout redirect). */
+ * wants credited; they pay amountMinor + card fee. Cards are never saved, so
+ * every top-up is a one-time hosted-checkout redirect. */
 export const WalletTopupReqSchema = z.object({
   amountMinor: z.number().int().min(10_000), // ₦100 minimum
-  savedCardId: z.string().min(1).optional(),
 });
 export type WalletTopupReq = z.infer<typeof WalletTopupReqSchema>;
 
-/** Handle for completing a 3DS/OTP-gated card charge via POST /api/cards/otp. */
-export const CardOtpHandleSchema = z.object({
-  orderReference: z.string(),
-  transactionId: z.string(),
-});
-export type CardOtpHandle = z.infer<typeof CardOtpHandleSchema>;
-
 export const WalletTopupResSchema = z.object({
-  // "checkout"     → redirect the user to checkoutLink (new card).
-  // "charged"      → the saved card is being charged; balance updates on settlement.
-  // "otp_required" → the saved-card charge is 3DS-gated; collect the OTP (see `otp`).
-  mode: z.enum(["checkout", "charged", "otp_required"]),
-  checkoutLink: z.string().nullable(),
+  // Always "checkout" — redirect the user to checkoutLink; the wallet is
+  // credited on settlement. (Kept as an enum for a stable client shape.)
+  mode: z.literal("checkout"),
+  checkoutLink: z.string(),
   netMinor: z.number().int(), // credited to the wallet
   feeMinor: z.number().int(), // card fee added on top
   chargedMinor: z.number().int(), // net + fee — what the card is charged
-  // Present only when mode is "otp_required".
-  otp: CardOtpHandleSchema.nullable().default(null),
 });
 export type WalletTopupRes = z.infer<typeof WalletTopupResSchema>;
 

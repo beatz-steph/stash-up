@@ -18,32 +18,21 @@ import { formatNaira } from "@/lib/money"
 import { cardFeeOn } from "@/lib/fees"
 import { useWallet } from "../queries"
 import { useProvisionWalletAccount, useTopupWalletByCard } from "../mutations"
-import { useCards } from "@/features/cards/queries"
-import { CardOtpDialog, type CardOtpHandle } from "@/features/cards/components/card-otp-dialog"
 
-/** Top up the wallet — by card (hosted checkout) or bank transfer to the
- * user's dedicated virtual account. Lives behind a single "Top up" action so
- * the wallet surface stays clean. */
+/** Top up the wallet — by card (one-time hosted checkout, never saved) or by
+ * bank transfer to the user's dedicated virtual account. Lives behind a single
+ * "Top up" action so the wallet surface stays clean. */
 export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const { data: wallet } = useWallet()
-  const { data: cards } = useCards()
   const provision = useProvisionWalletAccount()
   const topupByCard = useTopupWalletByCard()
   const [cardAmount, setCardAmount] = useState("")
-  const [selectedCardId, setSelectedCardId] = useState("") // "" = default, "new" = new card
-  // 3DS/OTP-gated saved-card charge: the handle to finish it in CardOtpDialog.
-  const [otpHandle, setOtpHandle] = useState<CardOtpHandle | null>(null)
 
   const va = wallet?.virtualAccount ?? null
   const cardNaira = Number(cardAmount)
   const cardAmountMinor = Number.isFinite(cardNaira) ? Math.round(cardNaira * 100) : 0
   const cardValid = cardAmountMinor >= 10_000 // ₦100 minimum
-
-  const activeCards = cards?.filter((c) => c.status === "ACTIVE") ?? []
-  // Effective selection: explicit choice, else the first saved card, else "new".
-  const effectiveCardId = selectedCardId || activeCards[0]?.id || "new"
-  const usingSavedCard = effectiveCardId !== "new"
 
   function onTabChange(value: string) {
     // Lazily provision the bank top-up account the first time it's viewed.
@@ -51,29 +40,11 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
   }
 
   function handleCardTopup() {
-    topupByCard.mutate(
-      {
-        amountMinor: cardAmountMinor,
-        ...(usingSavedCard ? { savedCardId: effectiveCardId } : {}),
-      },
-      {
-        onSuccess: (res) => {
-          // Saved-card charge stays in-app — close the dialog + reset.
-          if (res.mode === "charged") {
-            setOpen(false)
-            setCardAmount("")
-          } else if (res.mode === "otp_required" && res.otp) {
-            // 3DS-gated: hand off to the OTP step to finish the charge.
-            setOpen(false)
-            setOtpHandle(res.otp)
-          }
-        },
-      }
-    )
+    // Redirects to Nomba's hosted checkout on success.
+    topupByCard.mutate({ amountMinor: cardAmountMinor })
   }
 
   return (
-    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
@@ -112,55 +83,10 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
               onChange={(e) => setCardAmount(e.target.value)}
             />
 
-            {/* Which card to charge — saved cards + a "new card" option */}
-            {activeCards.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
-                  Pay with
-                </span>
-                {activeCards.map((card) => (
-                  <button
-                    key={card.id}
-                    type="button"
-                    onClick={() => setSelectedCardId(card.id)}
-                    className={`flex w-full items-center gap-3 rounded-su-lg border p-3 text-left transition-colors ${
-                      effectiveCardId === card.id
-                        ? "border-su-primary bg-su-primary/5"
-                        : "border-su-hairline hover:bg-su-surface"
-                    }`}
-                  >
-                    <CreditCard className="h-4 w-4 shrink-0 text-su-muted" />
-                    <span className="font-su-sans text-su-body-sm text-su-ink">
-                      {card.cardType ?? "Card"} ···· {card.last4 ?? "••••"}
-                    </span>
-                    {effectiveCardId === card.id && (
-                      <span className="ml-auto font-su-sans text-su-caption font-semibold text-su-primary">
-                        Selected
-                      </span>
-                    )}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCardId("new")}
-                  className={`flex w-full items-center gap-3 rounded-su-lg border p-3 text-left transition-colors ${
-                    effectiveCardId === "new"
-                      ? "border-su-primary bg-su-primary/5"
-                      : "border-su-hairline hover:bg-su-surface"
-                  }`}
-                >
-                  <Plus className="h-4 w-4 shrink-0 text-su-muted" />
-                  <span className="font-su-sans text-su-body-sm text-su-ink">Use a new card</span>
-                </button>
-              </div>
-            )}
-
-            {!usingSavedCard && (
-              <p className="font-su-sans text-su-caption text-su-muted">
-                You&apos;ll enter your card on the secure checkout — it&apos;s saved (never the
-                full number) so your next top-up is one tap.
-              </p>
-            )}
+            <p className="font-su-sans text-su-caption text-su-muted">
+              You&apos;ll enter your card on Nomba&apos;s secure checkout. Your card details
+              are never stored.
+            </p>
 
             {cardValid ? (
               <p className="font-su-sans text-su-caption text-su-muted">
@@ -179,7 +105,7 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
               onClick={handleCardTopup}
             >
               {topupByCard.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {usingSavedCard ? `Top up ${cardValid ? formatNaira(cardAmountMinor) : ""}` : "Continue to payment"}
+              Continue to payment
             </Button>
           </TabsContent>
 
@@ -239,12 +165,5 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
         </Tabs>
       </DialogContent>
     </Dialog>
-
-    <CardOtpDialog
-      handle={otpHandle}
-      onClose={() => setOtpHandle(null)}
-      onCompleted={() => setCardAmount("")}
-    />
-    </>
   )
 }
