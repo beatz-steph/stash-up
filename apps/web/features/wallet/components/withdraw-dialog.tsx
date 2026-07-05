@@ -92,7 +92,7 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
                 disabled={setPin.isPending}
               />
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex sm:justify-center">
               <Button
                 disabled={!newPinValid || setPin.isPending}
                 onClick={() => setPin.mutate(newPin, { onSuccess: () => setNewPin("") })}
@@ -127,7 +127,7 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
               <Label className="block text-center">Transaction PIN</Label>
               <PinField value={pin} onChange={setPin_} disabled={withdraw.isPending} />
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex sm:justify-center">
               <Button
                 disabled={!amountValid || !pinValid || withdraw.isPending}
                 onClick={handleWithdraw}
