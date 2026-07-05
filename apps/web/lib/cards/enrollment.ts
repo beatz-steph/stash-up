@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 
 /**
  * Card auto-debit shared logic. Kept side-effect free (no Prisma/Nomba here)
@@ -51,24 +52,27 @@ export function shouldCollectNow(cycleStatus: string, remainingDue: number): boo
 
 // ─── orderReference builders (also parsed as a fallback in the webhook) ───────
 // Prefix-tagged so the settlement handler can route by prefix when
-// orderMetaData is absent. A nonce keeps each checkout globally unique — an
-// abandoned checkout can be retried without a duplicate-orderReference reject
-// from Nomba (routing still keys off the stable prefix + orderMetaData.kind).
+// orderMetaData is absent. A short nonce keeps each checkout globally unique.
+// Nomba caps orderReference at 50 chars, so we CANNOT embed cuid ids here —
+// the cycle/membership/attempt live in orderMetaData + the ChargeAttempt row,
+// which is how the webhook actually routes (this reference is only a fallback
+// key + the verify-backstop lookup handle). Max length: 11 + 32 = 43.
 
-export function enrollOrderRef(cycleId: string, membershipId: string, nonce: string): string {
-  return `cardenroll_${cycleId}_${membershipId}_${nonce}`;
+/** Compact unique token for an orderReference (32 hex chars, no dashes). */
+export function orderNonce(): string {
+  return randomUUID().replace(/-/g, "");
 }
 
-export function verifyOrderRef(userId: string, nonce: string): string {
-  return `cardverify_${userId}_${nonce}`;
+export function enrollOrderRef(nonce: string): string {
+  return `cardenroll_${nonce}`;
 }
 
-export function chargeOrderRef(
-  cycleId: string,
-  membershipId: string,
-  attemptNumber: number
-): string {
-  return `cardchg_${cycleId}_${membershipId}_a${attemptNumber}`;
+export function verifyOrderRef(nonce: string): string {
+  return `cardverify_${nonce}`;
+}
+
+export function chargeOrderRef(nonce: string): string {
+  return `cardchg_${nonce}`;
 }
 
 /** Backoff before retry N (hours): attempt 2 waits 24h after attempt 1 failed,

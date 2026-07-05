@@ -9,6 +9,7 @@ import {
   computeRemainingDue,
   shouldCollectNow,
   chargeOrderRef,
+  orderNonce,
 } from "@/lib/cards/enrollment";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { LinkAutoDebitReqSchema, type LinkAutoDebitRes } from "@/app/api/cards/dto/cards.dto";
@@ -122,7 +123,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const attemptNumber = (last?.attemptNumber ?? 0) + 1;
 
       if (attemptNumber <= MAX_ATTEMPTS) {
-        const orderReference = chargeOrderRef(currentCycle.id, membership.id, attemptNumber);
+        const orderReference = chargeOrderRef(orderNonce());
         // Gross up so the NET (after Nomba's card fee) covers the contribution.
         const chargeMinor = grossUpForCardFee(remainingDue);
         const attempt = await prisma.chargeAttempt.create({

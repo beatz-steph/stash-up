@@ -11,6 +11,7 @@ import {
   shouldCollectNow,
   computeNextAttempt,
   chargeOrderRef,
+  orderNonce,
 } from "@/lib/cards/enrollment";
 import { grossUpForCardFee } from "@/lib/fees";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const orderReference = chargeOrderRef(cycle.id, m.id, attemptNumber);
+      const orderReference = chargeOrderRef(orderNonce());
       // Gross up so the NET (after Nomba's card fee) covers the contribution.
       const chargeMinor = grossUpForCardFee(remainingDue);
       const attempt = await prisma.chargeAttempt.create({

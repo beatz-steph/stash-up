@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
@@ -11,6 +10,7 @@ import {
   shouldCollectNow,
   enrollOrderRef,
   verifyOrderRef,
+  orderNonce,
   checkoutCallbackUrl,
   enrollMetadata,
 } from "@/lib/cards/enrollment";
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
     const contributionMode =
       !!currentCycle && shouldCollectNow(currentCycle.status, remainingDue);
 
-    const nonce = randomUUID();
+    const nonce = orderNonce();
     // Contribution charges are grossed-up so the NET (after Nomba's card fee)
     // covers the full contribution — the member pays the surfaced fee, the pot
     // still receives the whole amount. Verification stays a flat ₦50 hold.
@@ -94,8 +94,8 @@ export async function POST(req: Request) {
       ? grossUpForCardFee(remainingDue)
       : VERIFICATION_AMOUNT_MINOR;
     const orderReference = contributionMode
-      ? enrollOrderRef(currentCycle!.id, membership.id, nonce)
-      : verifyOrderRef(userId, nonce);
+      ? enrollOrderRef(nonce)
+      : verifyOrderRef(nonce);
 
     // One attempt row per (cycle, membership) enrollment — upsert so an
     // abandoned checkout retry reuses the slot with a fresh orderReference.
@@ -174,8 +174,8 @@ export async function POST(req: Request) {
   }
 
   // ── Path C: adding a card from Settings (no circle context) ──────────────
-  const nonce = randomUUID();
-  const orderReference = verifyOrderRef(userId, nonce);
+  const nonce = orderNonce();
+  const orderReference = verifyOrderRef(nonce);
   const attempt = await prisma.chargeAttempt.create({
     data: {
       userId,

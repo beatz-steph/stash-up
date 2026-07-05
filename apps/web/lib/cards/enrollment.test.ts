@@ -7,6 +7,7 @@ import {
   enrollOrderRef,
   verifyOrderRef,
   chargeOrderRef,
+  orderNonce,
   retryBackoffHours,
   computeNextAttempt,
   type PriorAttempt,
@@ -50,9 +51,17 @@ describe("shouldCollectNow", () => {
 
 describe("orderReference builders", () => {
   it("tag each reference with a routable prefix", () => {
-    expect(enrollOrderRef("cyc1", "mem1", "n")).toBe("cardenroll_cyc1_mem1_n");
-    expect(verifyOrderRef("user1", "n")).toBe("cardverify_user1_n");
-    expect(chargeOrderRef("cyc1", "mem1", 2)).toBe("cardchg_cyc1_mem1_a2");
+    expect(enrollOrderRef("n")).toBe("cardenroll_n");
+    expect(verifyOrderRef("n")).toBe("cardverify_n");
+    expect(chargeOrderRef("n")).toBe("cardchg_n");
+  });
+
+  it("stay within Nomba's 50-char orderReference limit", () => {
+    const nonce = orderNonce();
+    expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+    for (const ref of [enrollOrderRef(nonce), verifyOrderRef(nonce), chargeOrderRef(nonce)]) {
+      expect(ref.length).toBeLessThanOrEqual(50);
+    }
   });
 });
 
