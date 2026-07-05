@@ -5,6 +5,7 @@ import type { MatchResult } from "../reconciliation/match";
 import { applyContributionSplit } from "../reconciliation/apply";
 import { computeRemainingDue } from "../cards/enrollment";
 import { debitWallet } from "./ledger";
+import { notifyContributionReceived } from "@/lib/notifications";
 
 /**
  * Wallet-first collection for a member's cycle contribution. Debits the wallet
@@ -113,6 +114,31 @@ export async function collectFromWallet(params: {
     debitedMinor = debit;
     remainingDueMinor = remaining - debit;
   });
+
+  // Alert the member their wallet paid this cycle's contribution (best-effort —
+  // a notification failure must never affect the money move).
+  if (debitedMinor > 0) {
+    try {
+      const info = await prisma.cycle.findUnique({
+        where: { id: cycleId },
+        select: { sequence: true, circle: { select: { id: true, name: true } } },
+      });
+      if (info?.circle) {
+        await notifyContributionReceived({
+          userId,
+          amountMinor: debitedMinor,
+          circleName: info.circle.name,
+          circleId: info.circle.id,
+          cycleSequence: info.sequence,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "[waterfall] contribution notification failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
 
   return { debitedMinor, remainingDueMinor };
 }

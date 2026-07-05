@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { isCardSettlement, handleCardSettlement } from "./card-settlement";
 import { prisma } from "@workspace/db";
+import { notifyContributionReceived } from "@/lib/notifications";
 import type { NombaWebhookPayload } from "./verify";
 import type { WebhookReceipt } from "@workspace/db";
 
-vi.mock("@/lib/notifications", () => ({ createNotification: vi.fn() }));
+vi.mock("@/lib/notifications", () => ({
+  createNotification: vi.fn(),
+  notifyContributionReceived: vi.fn(),
+}));
 
 // tx mock shared across $transaction invocations
 const tx = {
@@ -117,6 +121,10 @@ describe("handleCardSettlement — cardchg contribution", () => {
     );
     // Cards are never saved — no membership binding.
     expect(tx.membership.update).not.toHaveBeenCalled();
+    // The member is alerted their card contribution landed.
+    expect(notifyContributionReceived).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", amountMinor: 1_000_000 })
+    );
   });
 
   it("applies the NET (gross − fee) to the pot and records the surfaced fee", async () => {

@@ -3,9 +3,11 @@ import { collectFromWallet } from "./waterfall";
 import { prisma } from "@workspace/db";
 import { debitWallet } from "./ledger";
 import { applyContributionSplit } from "../reconciliation/apply";
+import { notifyContributionReceived } from "@/lib/notifications";
 
 vi.mock("./ledger", () => ({ debitWallet: vi.fn() }));
 vi.mock("../reconciliation/apply", () => ({ applyContributionSplit: vi.fn() }));
+vi.mock("@/lib/notifications", () => ({ notifyContributionReceived: vi.fn() }));
 
 const tx = {
   contribution: { findUnique: vi.fn() },
@@ -16,6 +18,7 @@ vi.mock("@workspace/db", () => ({
   prisma: {
     walletAccount: { findUnique: vi.fn() },
     contribution: { findUnique: vi.fn() },
+    cycle: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -34,6 +37,10 @@ beforeEach(() => {
   );
   tx.contribution.findUnique.mockResolvedValue({ amountMinor: 0 }); // inner fresh read
   vi.mocked(debitWallet).mockResolvedValue({ applied: true, balanceAfterMinor: 0 });
+  vi.mocked(prisma.cycle.findUnique).mockResolvedValue({
+    sequence: 3,
+    circle: { id: "c1", name: "Test Circle" },
+  } as never);
 });
 
 describe("collectFromWallet (waterfall)", () => {
@@ -62,6 +69,17 @@ describe("collectFromWallet (waterfall)", () => {
     const splitArg = vi.mocked(applyContributionSplit).mock.calls[0]![1];
     expect(splitArg.decision).toBe("MATCHED");
     expect(splitArg.contributionStatus).toBe("COMPLETE");
+    // The member is alerted their wallet paid the contribution.
+    expect(notifyContributionReceived).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", amountMinor: 1_000_000, circleName: "Test Circle" })
+    );
+  });
+
+  it("does not notify when nothing was debited", async () => {
+    vi.mocked(prisma.walletAccount.findUnique).mockResolvedValue({ balanceMinor: 0 } as never);
+    vi.mocked(prisma.contribution.findUnique).mockResolvedValue({ amountMinor: 0 } as never);
+    await collectFromWallet(params);
+    expect(notifyContributionReceived).not.toHaveBeenCalled();
   });
 
   it("does nothing when the wallet is empty", async () => {

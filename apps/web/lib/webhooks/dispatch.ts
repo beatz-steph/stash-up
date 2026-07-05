@@ -15,7 +15,7 @@ import {
   handleWalletWithdrawalFailed,
 } from "./wallet-withdrawal";
 import { advanceRotation } from "../payout/rotation";
-import { createNotification } from "@/lib/notifications";
+import { createNotification, notifyContributionReceived } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
 import { sendEmail } from "@/lib/email/send";
 import { PayoutReceivedEmail } from "@/lib/email/templates/payout-received";
@@ -127,8 +127,10 @@ export async function dispatchWebhookEvent(
         return; // Return normally so route.ts marks as processed and returns 200
       }
 
-      // 4. DB Transaction
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 4. DB Transaction — returns whether money was actually applied (false on
+      // a duplicate webhook or an UNMATCHED credit) so we only alert on a real
+      // contribution.
+      const applied = await prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<boolean> => {
         // A. Create InboundTransfer
         try {
           await tx.inboundTransfer.create({
@@ -154,20 +156,32 @@ export async function dispatchWebhookEvent(
         } catch (err) {
           if ((err as { code?: string }).code === "P2002") {
             // Already applied, treat as success, do not re-increment pot
-            return;
+            return false;
           }
           throw err;
         }
 
         // B. Apply UNMATCHED gracefully (persist only InboundTransfer)
         if (matchResult.decision === "UNMATCHED") {
-          return;
+          return false;
         }
 
         // C/D/E. Apply the split (contribution + buffer + pot + status flip) —
         // shared with the card-settlement path so the money logic lives once.
         await applyContributionSplit(tx, matchResult);
+        return true;
       });
+
+      // Alert the member their bank-transfer contribution landed.
+      if (applied && membership && circle) {
+        await notifyContributionReceived({
+          userId: membership.userId,
+          amountMinor,
+          circleName: circle.name,
+          circleId: circle.id,
+          cycleSequence: cycle?.sequence,
+        });
+      }
 
       break;
     }

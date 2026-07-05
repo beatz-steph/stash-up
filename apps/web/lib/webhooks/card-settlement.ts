@@ -4,8 +4,9 @@ import { NombaWebhookPayload } from "./verify";
 import { matchInboundTransfer, MatchContext } from "../reconciliation/match";
 import { applyContributionSplit } from "../reconciliation/apply";
 import { handleWalletCardTopup } from "./wallet-topup";
-import { createNotification } from "@/lib/notifications";
+import { createNotification, notifyContributionReceived } from "@/lib/notifications";
 import { CARD_FEE_RATE } from "@/lib/fees";
+import { formatNaira } from "@/lib/money";
 
 /** Is this a card settlement (vs a VA transfer)? Discriminated by the
  * transaction type Nomba sends for hosted-checkout card payments. */
@@ -186,12 +187,23 @@ export async function settleContribution(
     }
   });
 
-  await createNotification({
-    userId: attempt.userId,
-    type: "GENERIC",
-    title: "Contribution collected",
-    body: "Your card payment was received and applied to this cycle's contribution.",
-  });
+  if (eligible) {
+    await notifyContributionReceived({
+      userId: attempt.userId,
+      amountMinor: data.netMinor,
+      circleName: circle?.name ?? "your circle",
+      circleId: membership.circleId,
+      cycleSequence: cycle?.sequence,
+    });
+  } else {
+    // Cycle already closed/paid — the money became carried-over credit.
+    await createNotification({
+      userId: attempt.userId,
+      type: "GENERIC",
+      title: "Payment received",
+      body: `${formatNaira(data.netMinor)} from your card was received and saved as credit toward your next cycle.`,
+    });
+  }
 }
 
 /**
