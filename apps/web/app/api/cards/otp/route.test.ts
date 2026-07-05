@@ -3,7 +3,11 @@ import { POST, DELETE } from "./route";
 import { prisma } from "@workspace/db";
 import { getSession } from "@/lib/session";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { submitCardOtp, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import {
+  submitCardOtp,
+  verifyCheckoutTransaction,
+  fetchCheckoutTransactionIds,
+} from "@/lib/nomba-client";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
 
@@ -12,6 +16,7 @@ vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
 vi.mock("@/lib/nomba-client", () => ({
   submitCardOtp: vi.fn(),
   verifyCheckoutTransaction: vi.fn(),
+  fetchCheckoutTransactionIds: vi.fn(),
 }));
 vi.mock("@workspace/db", () => ({
   prisma: { chargeAttempt: { findUnique: vi.fn(), update: vi.fn() } },
@@ -34,7 +39,8 @@ beforeEach(() => {
     userId: "u1",
     status: "PENDING",
   } as never);
-  // Default: the transaction lookup yields the real transaction id.
+  // Default: the checkout-transaction lookup finds no id; verify supplies it.
+  vi.mocked(fetchCheckoutTransactionIds).mockResolvedValue({ ids: [], debug: null });
   vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
     settled: false,
     status: "PENDING",
@@ -72,23 +78,22 @@ describe("POST /api/cards/otp", () => {
     expect(submitCardOtp).not.toHaveBeenCalled();
   });
 
-  it("submits with the looked-up transaction id and returns submitted", async () => {
+  it("submits with the looked-up paymentReference and returns submitted", async () => {
+    vi.mocked(fetchCheckoutTransactionIds).mockResolvedValue({ ids: ["pay-ref"], debug: null });
     const res = await POST(req(OK));
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data.submitted).toBe(true);
-    // Prefers the real transaction id from the lookup over the client's orderId.
+    // Prefers the checkout transaction's paymentReference over the client's orderId.
     expect(submitCardOtp).toHaveBeenCalledWith({
       otp: "123456",
       orderReference: "cardchg_x",
-      transactionId: "txn-real",
+      transactionId: "pay-ref",
     });
   });
 
   it("falls back to the orderReference when the first id is 'not found'", async () => {
-    vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
-      settled: false, status: "PENDING", transactionId: "bad-id", feeMinor: null, amountMinor: null,
-    });
+    vi.mocked(fetchCheckoutTransactionIds).mockResolvedValue({ ids: ["bad-id"], debug: null });
     vi.mocked(submitCardOtp)
       .mockResolvedValueOnce({ status: false, code: "400", message: "No valid transaction found with id: bad-id" })
       .mockResolvedValueOnce({ status: true, code: "00", message: "success" });
@@ -101,6 +106,19 @@ describe("POST /api/cards/otp", () => {
       orderReference: "cardchg_x",
       transactionId: "cardchg_x",
     });
+  });
+
+  it("409 with guidance when the charge is already terminal (bank declined)", async () => {
+    vi.mocked(fetchCheckoutTransactionIds).mockResolvedValue({ ids: ["pay-ref"], debug: null });
+    vi.mocked(submitCardOtp).mockResolvedValue({
+      status: false, code: "400", message: "Transaction with id pay-ref already completed.",
+    });
+    vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+      settled: false, status: "FAILED", transactionId: null, feeMinor: null, amountMinor: null,
+    });
+    const res = await POST(req(OK));
+    expect(res.status).toBe(409);
+    expect(submitCardOtp).toHaveBeenCalledTimes(1); // "already completed" is not retried across ids
   });
 
   it("400 immediately on a real OTP error (no retry against other ids)", async () => {

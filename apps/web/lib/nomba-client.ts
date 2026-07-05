@@ -672,6 +672,38 @@ export async function refundCheckoutTransaction(params: {
   return parsed.data;
 }
 
+/**
+ * Fetch a checkout transaction's details by our orderReference. Used to recover
+ * the transaction identifier a 3DS/OTP-gated charge must be completed against —
+ * the tokenized-charge response only returns an orderId (which the OTP endpoint
+ * rejects), while `transactionDetails` here carries paymentReference /
+ * paymentVendorReference. Returns candidate ids (most-likely first) plus the
+ * raw detail (card data stripped) for diagnostics. Best-effort: null on failure.
+ */
+export async function fetchCheckoutTransactionIds(
+  orderReference: string
+): Promise<{ ids: string[]; debug: Record<string, unknown> | null }> {
+  const qs = new URLSearchParams({ idType: "ORDER_REFERENCE", id: orderReference });
+  const res = await nombaFetch(`/v1/checkout/transaction?${qs.toString()}`);
+  if (!res.ok) {
+    return { ids: [], debug: { httpStatus: res.status } };
+  }
+  const data = await res.json().catch(() => null);
+  const detail = (data?.data ?? null) as Record<string, unknown> | null;
+  const td = (detail?.transactionDetails ?? {}) as Record<string, unknown>;
+  const order = (detail?.order ?? {}) as Record<string, unknown>;
+  const ids: string[] = [];
+  // Order matters: the payment references are the most likely OTP transaction id.
+  for (const v of [td.paymentReference, td.paymentVendorReference, td.transactionId, td.id, order.orderId]) {
+    if (typeof v === "string" && v) ids.push(v);
+  }
+  // Diagnostic view with card data removed (never log PAN/token).
+  const debug = detail
+    ? { order: detail.order, transactionDetails: detail.transactionDetails, statusCode: (detail as Record<string, unknown>).statusCode }
+    : null;
+  return { ids, debug };
+}
+
 /** Delete a stored card token (user removed the card). NEVER log tokenKey. */
 export async function deleteTokenizedCard(tokenKey: string): Promise<boolean> {
   const res = await nombaFetch("/v1/checkout/tokenized-card-data", {

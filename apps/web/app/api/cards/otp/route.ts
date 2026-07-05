@@ -2,7 +2,11 @@ import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { submitCardOtp, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import {
+  submitCardOtp,
+  verifyCheckoutTransaction,
+  fetchCheckoutTransactionIds,
+} from "@/lib/nomba-client";
 import {
   CardOtpReqSchema,
   CardOtpCancelReqSchema,
@@ -51,12 +55,16 @@ export async function POST(req: Request) {
   // real transaction id from the transaction lookup first, then the
   // orderReference, then the client-supplied orderId — moving on ONLY when Nomba
   // says the transaction id was wrong (never re-submitting against a bad OTP).
+  // The OTP transaction id is the checkout transaction's `paymentReference`
+  // (confirmed against Nomba: the charge response's orderId is rejected as "no
+  // valid transaction"). Fall back to the other references only if the lookup
+  // can't supply it.
   const candidates: string[] = [];
   try {
-    const v = await verifyCheckoutTransaction(orderReference);
-    if (v.transactionId) candidates.push(v.transactionId);
-  } catch {
-    // lookup is best-effort — fall through to the other candidates
+    const { ids } = await fetchCheckoutTransactionIds(orderReference);
+    candidates.push(...ids);
+  } catch (err) {
+    console.warn("[cards/otp] checkout txn lookup failed:", err instanceof Error ? err.message : err);
   }
   candidates.push(orderReference);
   if (transactionId) candidates.push(transactionId);
@@ -73,12 +81,7 @@ export async function POST(req: Request) {
       );
       return apiError("That OTP couldn't be verified. Check it and try again.", 502);
     }
-    if (result.status) {
-      // Log which candidate Nomba accepted so we can simplify to a single id
-      // once confirmed (id is not sensitive; the OTP is never logged).
-      console.log(`[cards/otp] OTP accepted with transactionId=${txId}`);
-      break;
-    }
+    if (result.status) break;
     // Only a wrong-transaction-id error is worth retrying with the next id; a
     // real error (bad/expired OTP) should surface immediately.
     if (!/no valid transaction|transaction not found|invalid transaction/i.test(result.message)) {
@@ -87,6 +90,25 @@ export async function POST(req: Request) {
   }
 
   if (!result || !result.status) {
+    // "Already completed" means the id was RIGHT but the charge is terminal.
+    // On this account 3DS/merchant-initiated tokenized charges reach a terminal
+    // decline before the OTP can complete them — confirm the real money outcome:
+    // if it somehow settled the webhook credits it; otherwise the card charge
+    // couldn't be authorized, so point the user at a path that works.
+    if (result && /already completed/i.test(result.message)) {
+      try {
+        const v = await verifyCheckoutTransaction(orderReference);
+        if (v.settled) {
+          return apiSuccess<CardOtpRes>({ submitted: true, message: "success" });
+        }
+      } catch {
+        // fall through to the conflict below
+      }
+      return apiError(
+        "Your bank couldn't authorize this card payment. Please top up your wallet by bank transfer, or pay with a bank transfer instead.",
+        409
+      );
+    }
     return apiError(result?.message || "That OTP was not accepted. Try again.", 400);
   }
 
