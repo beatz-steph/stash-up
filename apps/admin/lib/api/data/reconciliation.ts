@@ -1,6 +1,12 @@
 import { api, type ApiOptions } from "../client"
 import { reconciliationListResponseSchema } from "@/app/api/reconciliation/dto/reconciliation.dto"
 import { orphanListResponseSchema } from "@/app/api/reconciliation/orphans/dto/orphan.dto"
+import { treasuryReconResSchema } from "@/app/api/reconciliation/treasury/dto/treasury.dto"
+
+/** Run treasury reconciliation on demand and return the report. */
+export async function runTreasuryReconciliation(options?: ApiOptions) {
+  return api.post("/api/reconciliation/treasury", undefined, treasuryReconResSchema, options)
+}
 
 export async function getReconciliationQueue(
   params: { page?: number; limit?: number },
