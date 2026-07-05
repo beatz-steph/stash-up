@@ -34,7 +34,18 @@ has its own `.env` locally and its own env set per Vercel project. `.env*` is gi
 
 | Var | Purpose |
 |---|---|
-| `CRON_SECRET` | Bearer token Vercel Cron sends to `/api/cron/*`. Must be set on the web project or the sweep/payout crons return 401. |
+| `CRON_SECRET` | Bearer token Vercel Cron sends to `/api/cron/*` (sweeps, payouts, `/api/cron/reconciliation`). Must be set on the web project or those routes return 401. |
+
+Schedule the nightly treasury reconciliation against `GET /api/cron/reconciliation` (Bearer `CRON_SECRET`), alongside the existing `webhook-replay`, `orphan-spool`, `payout-sweep`, and `cycle-sweep` crons.
+
+## Reconciliation proxy (apps/admin)
+
+The admin app has **no Nomba client**, so its treasury-reconciliation "Run" button proxies to the web app's reconciliation endpoint.
+
+| Var | Purpose |
+|---|---|
+| `WEB_APP_URL` | Origin of `apps/web` (e.g. `http://localhost:3000` / the deployed web URL). Admin calls `${WEB_APP_URL}/api/cron/reconciliation`. Falls back to `NEXT_PUBLIC_APP_URL` then localhost. |
+| `CRON_SECRET` | Same shared secret as the web project — admin sends it as the Bearer to authenticate the reconciliation proxy. |
 
 ## Email / Analytics
 
