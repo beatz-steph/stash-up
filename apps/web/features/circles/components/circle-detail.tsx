@@ -103,6 +103,27 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const myBufferMinor = circle.myBufferMinor ?? 0
   const isPaidUpThisCycle = myAmountDueMinor === 0
 
+  // Current cycle + payout derived values (used across the right column).
+  const currentCycle = circle.currentCycle
+  const recipient = currentCycle
+    ? circle.members.find((m) => m.id === currentCycle.recipientMembershipId)
+    : undefined
+  const isMyTurn = !!recipient && recipient.user.id === session?.user?.id
+  const payoutStatus = currentCycle?.payout?.status ?? "PENDING"
+  const payoutStatusColor =
+    ({
+      PENDING: "text-su-muted",
+      INITIATED: "text-su-accent-yellow",
+      SUCCESS: "text-su-semantic-up",
+      FAILED: "text-su-semantic-down",
+    } as Record<string, string>)[payoutStatus] ?? "text-su-muted"
+  const potPct = currentCycle
+    ? Math.min(
+        100,
+        Math.round((currentCycle.potCollectedMinor / currentCycle.potExpectedMinor) * 100)
+      )
+    : 0
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -203,6 +224,31 @@ export function CircleDetail({ circleId }: { circleId: string }) {
             </AlertDialog>
           )}
         </div>
+      </div>
+
+      {/* Key facts — a consistent strip so the page reads as one planned view */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {[
+          { label: "Contribution", value: formatNaira(circle.contributionMinor) },
+          { label: "Frequency", value: FREQUENCY_LABEL[circle.frequency] ?? circle.frequency },
+          { label: "Members", value: `${activeMembersCount} / ${circle.totalSlots}` },
+          {
+            label: "Your position",
+            value: myMembership?.payoutPosition ? `#${myMembership.payoutPosition}` : "—",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-su-xl border border-su-hairline bg-su-surface-card p-su-base"
+          >
+            <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+              {stat.label}
+            </span>
+            <p className="mt-1 font-su-mono text-su-title-sm font-semibold text-su-ink [font-feature-settings:'tnum']">
+              {stat.value}
+            </p>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -474,110 +520,121 @@ export function CircleDetail({ circleId }: { circleId: string }) {
 
         {/* Right: status + invite */}
         <div className="space-y-6">
-          <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
-            <CardHeader>
-              <CardTitle className="font-su-sans text-su-title-sm">Circle status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <div className="flex justify-between font-su-sans text-su-caption text-su-muted">
-                  <span>Slots filled</span>
-                  <span className="font-su-mono text-su-ink [font-feature-settings:'tnum']">
-                    {slotsFilled} / {circle.totalSlots}
-                  </span>
-                </div>
-                <Progress value={pct} className="h-2" />
-              </div>
-
-              {circle.currentCycle && (
-                <div className="border-t border-su-hairline-soft pt-5 space-y-4">
-                  <h3 className="font-su-sans text-su-caption-sm font-semibold text-su-ink uppercase tracking-wider">
-                    Cycle {circle.currentCycle.sequence} Progress
-                  </h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between font-su-sans text-su-caption text-su-muted">
-                      <span>Pot Collected</span>
-                      <span className="font-su-mono text-su-ink [font-feature-settings:'tnum']">
-                        {formatNaira(circle.currentCycle.potCollectedMinor)} / {formatNaira(circle.currentCycle.potExpectedMinor)}
-                      </span>
-                    </div>
-                    <Progress value={Math.round((circle.currentCycle.potCollectedMinor / circle.currentCycle.potExpectedMinor) * 100)} className="h-2" />
-                    <div className="flex justify-between font-su-sans text-su-caption text-su-muted pt-1">
-                      <span>Status: {circle.currentCycle.status}</span>
-                      <span>Due: {new Date(circle.currentCycle.deadline).toLocaleDateString()}</span>
-                    </div>
+          {/* Formation progress — only meaningful while filling slots */}
+          {!isCompleted && (
+            <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
+              <CardHeader>
+                <CardTitle className="font-su-sans text-su-title-sm">Membership</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between font-su-sans text-su-caption text-su-muted">
+                    <span>Slots filled</span>
+                    <span className="font-su-mono text-su-ink [font-feature-settings:'tnum']">
+                      {slotsFilled} / {circle.totalSlots}
+                    </span>
                   </div>
-                  {(() => {
-                    const recipient = circle.members.find(m => m.id === circle.currentCycle?.recipientMembershipId);
-                    const isMyTurn = recipient?.user.id === session?.user?.id;
-                    const payoutStatus = circle.currentCycle?.payout?.status || "PENDING";
-                    const payoutStatusColor = {
-                      PENDING: "text-su-muted",
-                      INITIATED: "text-su-accent-yellow",
-                      SUCCESS: "text-su-semantic-up",
-                      FAILED: "text-su-semantic-down"
-                    }[payoutStatus] || "text-su-muted";
+                  <Progress value={pct} className="h-2" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-                    return (
-                      <div className="rounded-su-lg bg-su-surface p-4 space-y-3 border border-su-hairline mt-4">
-                        <div className="flex justify-between items-center">
-                          <span className="font-su-sans text-su-caption text-su-muted">Recipient</span>
-                          <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
-                            {isMyTurn ? "You" : recipient?.user.name}
-                          </span>
-                        </div>
-                        {circle.currentCycle?.status === "PAYOUT_INITIATED" || circle.currentCycle?.status === "PAID_OUT" ? (
-                          <>
-                            <div className="flex justify-between items-center">
-                              <span className="font-su-sans text-su-caption text-su-muted">Payout Status</span>
-                              <span className={`font-su-sans text-su-caption font-semibold ${payoutStatusColor}`}>
-                                {payoutStatus}
+          {/* This cycle — pot progress + payout, cleanly separated */}
+          {currentCycle && (
+            <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="font-su-sans text-su-title-sm">
+                    Cycle {currentCycle.sequence}
+                  </CardTitle>
+                  <Badge variant="outline" className="rounded-su-pill text-su-caption-sm">
+                    {currentCycle.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-2">
+                  <div className="flex justify-between font-su-sans text-su-caption text-su-muted">
+                    <span>Pot collected</span>
+                    <span className="font-su-mono text-su-ink [font-feature-settings:'tnum']">
+                      {formatNaira(currentCycle.potCollectedMinor)} /{" "}
+                      {formatNaira(currentCycle.potExpectedMinor)}
+                    </span>
+                  </div>
+                  <Progress value={potPct} className="h-2" />
+                  <p className="pt-1 font-su-sans text-su-caption text-su-muted">
+                    Due {new Date(currentCycle.deadline).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <div className="space-y-3 rounded-su-lg border border-su-hairline bg-su-surface p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-su-sans text-su-caption text-su-muted">Recipient</span>
+                    <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+                      {isMyTurn ? "You" : (recipient?.user.name ?? "—")}
+                    </span>
+                  </div>
+
+                  {(currentCycle.status === "PAYOUT_INITIATED" ||
+                    currentCycle.status === "PAID_OUT") && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="font-su-sans text-su-caption text-su-muted">
+                          Payout status
+                        </span>
+                        <span
+                          className={`font-su-sans text-su-caption font-semibold ${payoutStatusColor}`}
+                        >
+                          {payoutStatus}
+                        </span>
+                      </div>
+                      {currentCycle.payout && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="font-su-sans text-su-caption text-su-muted">
+                              Amount sent
+                            </span>
+                            <span className="font-su-mono text-su-body-sm font-semibold text-su-ink [font-feature-settings:'tnum']">
+                              {formatNaira(currentCycle.payout.amountMinor)}
+                            </span>
+                          </div>
+                          {currentCycle.payout.feeMinor > 0 && (
+                            <div className="flex items-center justify-between">
+                              <span className="font-su-sans text-su-caption text-su-muted">
+                                Transfer fee
+                              </span>
+                              <span className="font-su-mono text-su-caption text-su-muted [font-feature-settings:'tnum']">
+                                −{formatNaira(currentCycle.payout.feeMinor)}
                               </span>
                             </div>
-                            {circle.currentCycle.payout && (
-                              <>
-                                <div className="flex justify-between items-center">
-                                  <span className="font-su-sans text-su-caption text-su-muted">Amount sent</span>
-                                  <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
-                                    {formatNaira(circle.currentCycle.payout.amountMinor)}
-                                  </span>
-                                </div>
-                                {circle.currentCycle.payout.feeMinor > 0 && (
-                                  <div className="flex justify-between items-center">
-                                    <span className="font-su-sans text-su-caption text-su-muted">Transfer fee</span>
-                                    <span className="font-su-sans text-su-caption text-su-muted">
-                                      −{formatNaira(circle.currentCycle.payout.feeMinor)}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                            {circle.currentCycle.payout?.failureReason && (
-                              <p className="font-su-sans text-su-caption text-su-semantic-down">
-                                {circle.currentCycle.payout.failureReason}
-                              </p>
-                            )}
-                          </>
-                        ) : null}
+                          )}
+                        </>
+                      )}
+                      {currentCycle.payout?.failureReason && (
+                        <p className="font-su-sans text-su-caption text-su-semantic-down">
+                          {currentCycle.payout.failureReason}
+                        </p>
+                      )}
+                    </>
+                  )}
 
-                        {isCreator && circle.currentCycle?.status === "READY_TO_PAYOUT" && (
-                          <Button 
-                            className="w-full rounded-su-pill mt-2" 
-                            onClick={() => triggerPayout(circle.currentCycle!.id)}
-                            disabled={isTriggeringPayout}
-                          >
-                            {isTriggeringPayout ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                            Trigger Payout
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  {isCreator && currentCycle.status === "READY_TO_PAYOUT" && (
+                    <Button
+                      className="w-full rounded-su-pill"
+                      onClick={() => triggerPayout(currentCycle.id)}
+                      disabled={isTriggeringPayout}
+                    >
+                      {isTriggeringPayout ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Trigger payout
+                    </Button>
+                  )}
                 </div>
-              )}
-
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           {isCreator && isForming && (activeMembersCount < circle.totalSlots || isFullAndActive) && (
             <Card className="rounded-su-xl border border-su-hairline bg-su-surface-card">

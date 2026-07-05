@@ -11,6 +11,7 @@ import { PostHogIdentify } from "@/components/posthog-identify"
 import { DashboardHeader, PageHeading, PageContent } from "./components/dashboard-header"
 import { DashboardOverview } from "@/features/circles/components/dashboard-overview"
 import { RecentTransactions } from "@/features/transactions/components/recent-transactions"
+import { WalletSummary } from "@/features/wallet/components/wallet-summary"
 
 export default async function DashboardPage() {
   const session = await requireSession()
@@ -62,6 +63,8 @@ export default async function DashboardPage() {
         />
 
         <OnboardingBanner status={onboardingStatus} userEmail={user.email} hasCircles={hasCircles} />
+
+        <WalletSummary />
 
         <DashboardOverview />
 
