@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import localFont from "next/font/local"
 import { Geist_Mono } from "next/font/google"
 
@@ -21,20 +22,46 @@ const fontMono = Geist_Mono({
   variable: "--font-mono",
 })
 
-export const metadata = {
+const siteUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.stashup.xyz"
+
+export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "StashUp — Save together, get paid in turns",
+    template: "%s · StashUp",
+  },
+  description:
+    "StashUp is a digital Ajo/Esusu — join a trusted savings circle, contribute each cycle, and take your payout when it's your turn. Bank-grade rails, automatic reconciliation, real payouts.",
+  applicationName: "StashUp",
+  keywords: [
+    "Ajo",
+    "Esusu",
+    "ROSCA",
+    "rotating savings",
+    "savings circle",
+    "thrift",
+    "digital thrift",
+    "group savings",
+    "Nigeria savings",
+  ],
+  authors: [{ name: "StashUp" }],
+  openGraph: {
+    type: "website",
+    siteName: "StashUp",
+    url: siteUrl,
+    title: "StashUp — Save together, get paid in turns",
+    description:
+      "Join a trusted savings circle, contribute each cycle, and collect the full pot when it's your turn. Real payouts on bank-grade rails.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "StashUp — Save together, get paid in turns",
+    description:
+      "Digital Ajo/Esusu savings circles with automatic reconciliation and real payouts.",
+  },
   icons: [
-    {
-      rel: 'icon',
-      type: 'image/svg+xml',
-      url: '/icon.svg',
-      media: '(prefers-color-scheme: light)',
-    },
-    {
-      rel: 'icon',
-      type: 'image/svg+xml',
-      url: '/icon-dark.svg',
-      media: '(prefers-color-scheme: dark)',
-    },
+    { rel: "icon", type: "image/svg+xml", url: "/icon.svg", media: "(prefers-color-scheme: light)" },
+    { rel: "icon", type: "image/svg+xml", url: "/icon-dark.svg", media: "(prefers-color-scheme: dark)" },
   ],
 }
 

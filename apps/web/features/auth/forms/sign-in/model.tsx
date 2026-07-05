@@ -37,7 +37,7 @@ export function useSignInForm() {
         setIsLoading(false)
         return
       }
-      router.push("/")
+      router.push("/dashboard")
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")

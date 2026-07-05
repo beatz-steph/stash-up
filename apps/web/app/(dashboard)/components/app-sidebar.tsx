@@ -23,7 +23,7 @@ import { SignOutButton } from "@/components/sign-out-button"
 import { useMyInvites } from "@/features/circles/queries"
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/circles", label: "Circles", icon: Users, exact: false },
   { href: "/transactions", label: "Transactions", icon: Receipt, exact: false },
   { href: "/invites", label: "Invites", icon: Inbox, exact: false },
@@ -50,7 +50,7 @@ export function AppSidebar({
   return (
     <Sidebar className="border-r border-su-hairline-soft">
       <SidebarHeader className="h-16 justify-center border-b border-su-hairline-soft px-4">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2">
           <Image src="/logo.svg" alt="StashUp" width={24} height={24} className="h-6 w-6" />
           <span className="font-su-display text-su-title-md font-semibold tracking-tight text-su-ink">
             StashUp

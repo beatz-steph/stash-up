@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { getSessionCookie } from "better-auth/cookies"
 
 // Define public routes that do not require authentication
-const publicRoutes = ["/sign-in", "/sign-up", "/forgot-password", "/reset-password"]
+const publicRoutes = ["/", "/sign-in", "/sign-up", "/forgot-password", "/reset-password", "/terms", "privacy"]
 
 // Define API routes that are meant to be publicly accessible (e.g., auth handlers, webhooks)
 const publicApiRoutes = ["/api/auth", "/api/username-available", "/api/webhooks/nomba", "/api/cron"]

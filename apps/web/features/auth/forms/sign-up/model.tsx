@@ -95,7 +95,7 @@ export function useSignUpForm() {
       // Identify here so the anonymous session links to the new user id.
       if (data?.user?.id) identifyUser(data.user.id)
       toast.success("Account created — welcome to StashUp!")
-      router.push("/")
+      router.push("/dashboard")
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An unexpected error occurred")

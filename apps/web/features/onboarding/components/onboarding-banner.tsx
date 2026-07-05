@@ -77,7 +77,7 @@ export function OnboardingBanner({ status, userEmail, hasCircles = false }: Onbo
     try {
       const { error } = await authClient.sendVerificationEmail({
         email: userEmail,
-        callbackURL: "/",
+        callbackURL: "/dashboard",
       })
       if (error) {
         toast.error(error.message || "Couldn't send the verification email. Try again.")

@@ -29,7 +29,7 @@ export function OnboardingGuard({ children }: { children: ReactNode }) {
             </p>
           </div>
           <Button asChild className="w-full rounded-su-pill">
-            <Link href="/">
+            <Link href="/dashboard">
               Complete Onboarding
             </Link>
           </Button>
