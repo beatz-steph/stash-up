@@ -116,7 +116,7 @@ describe("CircleDetail — payout section", () => {
     renderDetail()
 
     await waitFor(() => {
-      expect(screen.getByText(/Sent to bank/i)).toBeInTheDocument()
+      expect(screen.getByText(/₦10,000\.00 sent/i)).toBeInTheDocument()
     })
     // Cycle status is surfaced with a friendly label.
     expect(screen.getByText("Paid out")).toBeInTheDocument()

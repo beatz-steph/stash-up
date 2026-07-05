@@ -303,9 +303,10 @@ export function CircleDetail({ circleId }: { circleId: string }) {
 
       {isActive && currentCycle && (
         <section className="overflow-hidden rounded-su-xl border border-su-hairline bg-su-surface-card shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
-          <div className="grid grid-cols-1 divide-y divide-su-hairline-soft lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-            {/* Your side of the ledger */}
-            <div className="space-y-5 p-su-lg">
+          {/* Asymmetric split: the status column is narrow, the pot gets the room. */}
+          <div className="grid grid-cols-1 divide-y divide-su-hairline-soft lg:grid-cols-[2fr_3fr] lg:divide-x lg:divide-y-0">
+            {/* Your side of the ledger — compact status */}
+            <div className="flex flex-col justify-center gap-3 p-5">
               <div className="flex items-baseline justify-between gap-3">
                 <SectionLabel>Your contribution</SectionLabel>
                 <span className="font-su-sans text-su-caption text-su-muted">
@@ -315,7 +316,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
 
               {isPaidUpThisCycle ? (
                 <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-su-full bg-su-semantic-up/10 text-su-semantic-up">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-su-full bg-su-semantic-up/10 text-su-semantic-up">
                     <Check className="h-5 w-5" />
                   </span>
                   <div>
@@ -329,38 +330,33 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 </div>
               ) : (
                 <div>
-                  <p className="font-su-mono text-su-display-sm font-bold text-su-ink [font-feature-settings:'tnum']">
+                  <p className="font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
                     {formatNaira(myAmountDueMinor)}
                   </p>
-                  <p className="mt-1 font-su-sans text-su-caption text-su-muted">
+                  <p className="mt-0.5 font-su-sans text-su-caption text-su-muted">
                     left to pay · due {shortDate(currentCycle.deadline)}
                     {myContributionMinor > 0 && (
                       <> · you&apos;ve sent {formatNaira(myContributionMinor)} so far</>
                     )}
+                  </p>
+                  <p className="mt-2 font-su-sans text-su-caption text-su-muted">
+                    Pay via <span className="font-semibold text-su-ink">How you pay</span> below.
                   </p>
                 </div>
               )}
 
               {myBufferMinor > 0 && (
                 <p className="font-su-sans text-su-caption text-su-muted">
-                  You have{" "}
                   <span className="font-su-mono font-semibold text-su-semantic-up [font-feature-settings:'tnum']">
                     {formatNaira(myBufferMinor)}
                   </span>{" "}
-                  credit from an earlier overpayment — it applies to your next cycle automatically.
-                </p>
-              )}
-
-              {!isPaidUpThisCycle && (
-                <p className="font-su-sans text-su-caption text-su-muted">
-                  Pay by bank transfer or auto-save — both are under{" "}
-                  <span className="font-semibold text-su-ink">How you pay</span> below.
+                  credit applies to your next cycle automatically.
                 </p>
               )}
             </div>
 
-            {/* The circle's side: the pot */}
-            <div className="space-y-5 bg-su-surface-soft p-su-lg">
+            {/* The circle's side: the pot — flat rows, no box-in-box */}
+            <div className="space-y-4 bg-su-surface-soft p-5">
               <div className="flex items-baseline justify-between gap-3">
                 <SectionLabel>The pot</SectionLabel>
                 <span className="font-su-sans text-su-caption font-semibold text-su-ink">
@@ -381,47 +377,29 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 </p>
               </div>
 
-              <div className="space-y-3 rounded-su-lg border border-su-hairline-soft bg-su-surface-card p-4">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback className="bg-su-primary/10 font-su-sans text-su-caption-sm font-semibold text-su-primary">
-                      {recipient ? initials(recipient.user.name) : "—"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-su-sans text-su-body-sm font-semibold text-su-ink">
-                      {isMyTurn ? "You" : (recipient?.user.name ?? "—")}
-                    </p>
-                    <p className="font-su-sans text-su-caption text-su-muted">
-                      {payoutInFlight ? "collected this pot" : "collects this pot"}
-                    </p>
-                  </div>
+              <div className="flex flex-wrap items-center gap-3 border-t border-su-hairline-soft pt-4">
+                <Avatar className="h-9 w-9">
+                  <AvatarFallback className="bg-su-primary/10 font-su-sans text-su-caption-sm font-semibold text-su-primary">
+                    {recipient ? initials(recipient.user.name) : "—"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-su-sans text-su-body-sm font-semibold text-su-ink">
+                    {isMyTurn ? "You" : (recipient?.user.name ?? "—")}
+                  </p>
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    {payoutInFlight ? "collected this pot" : "collects this pot"}
+                  </p>
                 </div>
 
                 {payoutInFlight && currentCycle.payout && (
-                  <div className="space-y-1.5 border-t border-su-hairline-soft pt-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-su-sans text-su-caption text-su-muted">Sent to bank</span>
-                      <span className="font-su-mono text-su-body-sm font-semibold text-su-ink [font-feature-settings:'tnum']">
-                        {formatNaira(currentCycle.payout.amountMinor)}
-                      </span>
-                    </div>
+                  <div className="text-right">
+                    <p className="font-su-mono text-su-body-sm font-semibold text-su-ink [font-feature-settings:'tnum']">
+                      {formatNaira(currentCycle.payout.amountMinor)} sent
+                    </p>
                     {currentCycle.payout.feeMinor > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="font-su-sans text-su-caption text-su-muted">
-                          Transfer fee
-                        </span>
-                        <span className="font-su-mono text-su-caption text-su-muted [font-feature-settings:'tnum']">
-                          −{formatNaira(currentCycle.payout.feeMinor)}
-                        </span>
-                      </div>
-                    )}
-                    {currentCycle.payout.status === "FAILED" && (
-                      <p className="font-su-sans text-su-caption text-su-semantic-down">
-                        Payout failed{" "}
-                        {currentCycle.payout.failureReason
-                          ? `— ${currentCycle.payout.failureReason}`
-                          : "— our team is on it."}
+                      <p className="font-su-mono text-su-caption-sm text-su-muted [font-feature-settings:'tnum']">
+                        −{formatNaira(currentCycle.payout.feeMinor)} transfer fee
                       </p>
                     )}
                   </div>
@@ -429,7 +407,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
 
                 {isCreator && currentCycle.status === "READY_TO_PAYOUT" && (
                   <Button
-                    className="w-full rounded-su-pill"
+                    className="rounded-su-pill"
                     onClick={() => triggerPayout(currentCycle.id)}
                     disabled={isTriggeringPayout}
                   >
@@ -438,6 +416,15 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                   </Button>
                 )}
               </div>
+
+              {payoutInFlight && currentCycle.payout?.status === "FAILED" && (
+                <p className="font-su-sans text-su-caption text-su-semantic-down">
+                  Payout failed{" "}
+                  {currentCycle.payout.failureReason
+                    ? `— ${currentCycle.payout.failureReason}`
+                    : "— our team is on it."}
+                </p>
+              )}
             </div>
           </div>
         </section>
