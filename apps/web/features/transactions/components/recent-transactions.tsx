@@ -51,7 +51,7 @@ export function RecentTransactions() {
               No transactions yet
             </p>
             <p className="font-su-sans text-su-caption text-su-muted">
-              Contributions and payouts across your circles will show up here.
+              Contributions, payouts and wallet activity will show up here.
             </p>
           </div>
         ) : (

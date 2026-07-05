@@ -10,6 +10,7 @@ vi.mock("@workspace/db", () => ({
   prisma: {
     inboundTransfer: { findMany: vi.fn() },
     payout: { findMany: vi.fn() },
+    walletLedgerEntry: { findMany: vi.fn() },
   },
   Prisma: {},
 }))
@@ -22,6 +23,8 @@ describe("GET /api/transactions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "user-1" }))
+    // Default: no wallet movements — tests that exercise them opt in.
+    vi.mocked(prisma.walletLedgerEntry.findMany).mockResolvedValue([] as never)
   })
 
   it("401 when unauthenticated", async () => {
@@ -61,7 +64,7 @@ describe("GET /api/transactions", () => {
     expect(data.items[1]).toMatchObject({ kind: "CONTRIBUTION", amountMinor: 500000, cycleSequence: 1 })
   })
 
-  it("scopes both queries to the current user", async () => {
+  it("scopes all three queries to the current user", async () => {
     vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValue([] as never)
     vi.mocked(prisma.payout.findMany).mockResolvedValue([] as never)
 
@@ -74,6 +77,112 @@ describe("GET /api/transactions", () => {
     )
     expect(prisma.payout.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { recipientMembership: { userId: "user-1" } } }),
+    )
+    expect(prisma.walletLedgerEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { wallet: { userId: "user-1" } } }),
+    )
+  })
+
+  it("merges wallet movements with direction + label and correct sign", async () => {
+    vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.payout.findMany).mockResolvedValue([] as never)
+    vi.mocked(prisma.walletLedgerEntry.findMany).mockResolvedValue([
+      {
+        id: "w1",
+        direction: "CREDIT",
+        amountMinor: 500000,
+        source: "TOPUP_CARD",
+        createdAt: new Date("2026-06-20T10:00:00Z"),
+      },
+      {
+        id: "w2",
+        direction: "DEBIT",
+        amountMinor: 200000,
+        source: "WITHDRAWAL",
+        createdAt: new Date("2026-06-19T10:00:00Z"),
+      },
+    ] as never)
+
+    const res = await GET(req())
+    const { data } = await res.json()
+
+    expect(data.items).toHaveLength(2)
+    expect(data.items[0]).toMatchObject({
+      id: "wal_w1",
+      kind: "WALLET",
+      direction: "CREDIT",
+      label: "Card top-up",
+      amountMinor: 500000,
+      circleId: "",
+    })
+    expect(data.items[1]).toMatchObject({
+      id: "wal_w2",
+      kind: "WALLET",
+      direction: "DEBIT",
+      label: "Withdrawal",
+    })
+  })
+
+  it("wallet outranks payout at a tied timestamp and pages without skips", async () => {
+    const tie = new Date("2026-06-15T10:00:00Z")
+    const payoutTie = {
+      id: "p1",
+      amountMinor: 1000,
+      status: "SUCCESS",
+      createdAt: tie,
+      cycle: { sequence: 1, circle: { id: "c1", name: "Alpha" } },
+    }
+    const walletTie = {
+      id: "w1",
+      direction: "CREDIT",
+      amountMinor: 2000,
+      source: "TOPUP_BANK",
+      createdAt: tie,
+    }
+
+    // Page 1: "wal_w1" > "out_p1" lexically → wallet comes first.
+    vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValueOnce([] as never)
+    vi.mocked(prisma.payout.findMany).mockResolvedValueOnce([payoutTie] as never)
+    vi.mocked(prisma.walletLedgerEntry.findMany).mockResolvedValueOnce([walletTie] as never)
+
+    const page1 = (await GET(req("http://localhost/api/transactions?limit=1")).then((r) => r.json())).data
+    expect(page1.items[0].id).toBe("wal_w1")
+    expect(page1.nextCursor).not.toBeNull()
+
+    // Page 2 resuming from the wallet cursor: the payout at the tie is still
+    // eligible (lower rank, not yet emitted); the wallet row is excluded.
+    vi.mocked(prisma.inboundTransfer.findMany).mockResolvedValueOnce([] as never)
+    vi.mocked(prisma.payout.findMany).mockResolvedValueOnce([payoutTie] as never)
+    vi.mocked(prisma.walletLedgerEntry.findMany).mockResolvedValueOnce([] as never)
+
+    const page2 = (
+      await GET(
+        req(`http://localhost/api/transactions?limit=1&cursor=${page1.nextCursor}`),
+      ).then((r) => r.json())
+    ).data
+    expect(page2.items[0].id).toBe("out_p1")
+
+    // Payout query got the whole tie (no id restriction) because the cursor is
+    // a wallet row; the wallet query got `id < w1` at the tie.
+    expect(prisma.payout.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { createdAt: { lt: tie } },
+            { createdAt: tie },
+          ],
+        }),
+      }),
+    )
+    expect(prisma.walletLedgerEntry.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { createdAt: { lt: tie } },
+            { createdAt: tie, id: { lt: "w1" } },
+          ],
+        }),
+      }),
     )
   })
 

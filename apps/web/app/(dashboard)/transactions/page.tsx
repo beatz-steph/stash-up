@@ -12,7 +12,7 @@ export default async function TransactionsPage() {
       <PageContent>
         <PageHeading
           title="Transactions"
-          subtitle="Every contribution and payout across your circles."
+          subtitle="Every contribution, payout and wallet movement."
         />
         <AllTransactions />
       </PageContent>

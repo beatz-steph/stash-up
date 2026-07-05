@@ -47,7 +47,7 @@ export function AllTransactions() {
             No transactions yet
           </p>
           <p className="font-su-sans text-su-caption text-su-muted">
-            Your contributions and payouts across every circle will appear here.
+            Your contributions, payouts and wallet activity will appear here.
           </p>
         </div>
       </div>
