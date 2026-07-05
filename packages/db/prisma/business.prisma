@@ -131,6 +131,7 @@ enum ChargePurpose {
   CONTRIBUTION  // sweep/link charge applied to a cycle's pot
   ENROLLMENT    // new-card checkout that doubled as the contribution
   VERIFICATION  // ₦50 tokenization charge — refunded after success, never applied to a pot
+  TOPUP         // saved-card wallet top-up — durable record so a missed webhook is reconcilable
 }
 
 enum RefundStatus {

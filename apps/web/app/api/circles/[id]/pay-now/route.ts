@@ -3,7 +3,8 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { requireCircleMember, requireVerifiedEmail } from "@/lib/access-control";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { chargeTokenizedCard } from "@/lib/nomba-client";
+import { chargeTokenizedCard, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
 import { grossUpForCardFee } from "@/lib/fees";
 import {
   MAX_ATTEMPTS,
@@ -94,12 +95,53 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!card || card.userId !== userId) return apiError("Card not found", 404);
   if (card.status !== "ACTIVE") return apiError("That card is no longer usable. Add a new card.", 409);
 
-  // Never double-charge while an attempt is already in flight for this cycle.
+  // Never double-charge while an attempt is already in flight for this cycle —
+  // but don't dead-end on a stuck one either. If a PENDING card attempt exists,
+  // ask Nomba the truth: already settled → apply it now (the webhook was missed);
+  // definitively failed → unblock a fresh charge; still in-flight → 409.
   const pending = await prisma.chargeAttempt.findFirst({
     where: { cycleId: currentCycle.id, membershipId: membership.id, status: "PENDING" },
-    select: { id: true },
+    orderBy: { createdAt: "desc" },
   });
-  if (pending) return apiError("A card payment is already processing for this cycle", 409);
+  if (pending) {
+    let unblocked = false;
+    if (pending.purpose === "CONTRIBUTION") {
+      try {
+        const v = await verifyCheckoutTransaction(pending.orderReference);
+        if (v.settled) {
+          await settleCardChargeFromVerify(pending, {
+            transactionId: v.transactionId,
+            feeMinor: v.feeMinor,
+            grossMinor: v.amountMinor,
+          });
+          return apiSuccess<PayNowRes>({
+            method: "CARD",
+            status: "CHARGING",
+            debitedMinor: 0,
+            remainingDueMinor: 0,
+          });
+        }
+        if (v.status && !/pending|processing/i.test(v.status)) {
+          await prisma.chargeAttempt.update({
+            where: { id: pending.id },
+            data: { status: "FAILED", failureReason: `verify_${v.status.toLowerCase()}` },
+          });
+          unblocked = true; // fall through to a fresh charge below
+        }
+      } catch (err) {
+        console.error(
+          "[pay-now] verify pending failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+    if (!unblocked) {
+      return apiError(
+        "A card payment is already processing for this cycle. Give it a moment, then try again.",
+        409
+      );
+    }
+  }
 
   const last = await prisma.chargeAttempt.findFirst({
     where: { cycleId: currentCycle.id, membershipId: membership.id, attemptNumber: { gte: 1 } },

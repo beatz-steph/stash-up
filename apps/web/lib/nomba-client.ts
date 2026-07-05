@@ -615,6 +615,12 @@ const CheckoutTransactionSchema = z
     // Field name varies by endpoint; capture both and prefer transactionId.
     transactionId: z.string().nullish(),
     id: z.string().nullish(),
+    // Present on settled transactions — lets the verify backstop apply the
+    // exact NET (amount − fee) instead of estimating from the grossed charge.
+    // Field names vary by endpoint, so capture every spelling we've seen.
+    fee: z.union([z.number(), z.string()]).nullish(),
+    amount: z.union([z.number(), z.string()]).nullish(),
+    transactionAmount: z.union([z.number(), z.string()]).nullish(),
   })
   .passthrough();
 
@@ -627,6 +633,10 @@ export async function verifyCheckoutTransaction(orderReference: string): Promise
   settled: boolean;
   status: string;
   transactionId: string | null;
+  // NET/fee in kobo when the settled transaction reports them; null otherwise
+  // (the caller then estimates from the grossed charge amount).
+  feeMinor: number | null;
+  amountMinor: number | null;
 }> {
   const qs = new URLSearchParams({ orderReference });
   const res = await nombaFetch(`/v1/transactions/accounts/single?${qs.toString()}`);
@@ -645,10 +655,17 @@ export async function verifyCheckoutTransaction(orderReference: string): Promise
     );
   }
 
+  const toMinor = (v: number | string | null | undefined): number | null =>
+    v === null || v === undefined || v === "" ? null : Math.round(Number(v) * 100);
+  const grossMinor = toMinor(parsed.data.transactionAmount ?? parsed.data.amount);
+  const feeMinor = toMinor(parsed.data.fee);
+
   return {
     settled: parsed.data.status === "SUCCESS",
     status: parsed.data.status,
     transactionId: parsed.data.transactionId ?? parsed.data.id ?? null,
+    feeMinor,
+    amountMinor: grossMinor,
   };
 }
 

@@ -3,14 +3,16 @@ import { POST } from "./route";
 import { prisma } from "@workspace/db";
 import { getSession } from "@/lib/session";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { chargeTokenizedCard } from "@/lib/nomba-client";
+import { chargeTokenizedCard, verifyCheckoutTransaction } from "@/lib/nomba-client";
+import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { createMockSession } from "@test/mocks/auth";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
-vi.mock("@/lib/nomba-client", () => ({ chargeTokenizedCard: vi.fn() }));
+vi.mock("@/lib/nomba-client", () => ({ chargeTokenizedCard: vi.fn(), verifyCheckoutTransaction: vi.fn() }));
+vi.mock("@/lib/webhooks/card-settlement", () => ({ settleCardChargeFromVerify: vi.fn() }));
 vi.mock("@/lib/wallet/waterfall", () => ({ collectFromWallet: vi.fn() }));
 vi.mock("@workspace/db", () => ({
   prisma: {
@@ -122,9 +124,48 @@ describe("POST /api/circles/[id]/pay-now", () => {
       expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(404);
     });
 
-    it("409 when a card charge is already in flight", async () => {
-      vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({ id: "pending" } as never);
+    it("409 when a card charge is genuinely still in flight", async () => {
+      vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({
+        id: "pending", orderReference: "cardchg_x", purpose: "CONTRIBUTION",
+      } as never);
+      vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+        settled: false, status: "PENDING", transactionId: null, feeMinor: null, amountMinor: null,
+      });
       expect((await POST(req({ method: "CARD", savedCardId: "card1" }), params)).status).toBe(409);
+      expect(chargeTokenizedCard).not.toHaveBeenCalled();
+    });
+
+    it("self-heals a stuck PENDING attempt that Nomba says already settled", async () => {
+      vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({
+        id: "pending", orderReference: "cardchg_x", purpose: "CONTRIBUTION",
+        cycleId: "cyc1", membershipId: "m1", amountMinor: 405_680,
+      } as never);
+      vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+        settled: true, status: "SUCCESS", transactionId: "TX", feeMinor: 5_680, amountMinor: 405_680,
+      });
+      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      expect(res.status).toBe(200);
+      const { data } = await res.json();
+      expect(data).toMatchObject({ method: "CARD", status: "CHARGING", remainingDueMinor: 0 });
+      expect(settleCardChargeFromVerify).toHaveBeenCalled();
+      expect(chargeTokenizedCard).not.toHaveBeenCalled(); // no double charge
+    });
+
+    it("unblocks a fresh charge when the stuck attempt definitively failed", async () => {
+      vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValueOnce({
+        id: "pending", orderReference: "cardchg_x", purpose: "CONTRIBUTION",
+        cycleId: "cyc1", membershipId: "m1", amountMinor: 405_680,
+      } as never);
+      vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+        settled: false, status: "FAILED", transactionId: null, feeMinor: null, amountMinor: null,
+      });
+      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: "success" } as never);
+      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      expect(res.status).toBe(200);
+      expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
+      );
+      expect(chargeTokenizedCard).toHaveBeenCalled(); // fresh charge proceeded
     });
 
     it("502 and marks the attempt FAILED when the charge throws", async () => {

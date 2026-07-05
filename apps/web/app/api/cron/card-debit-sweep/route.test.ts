@@ -8,6 +8,8 @@ import {
 } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
+import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
+import { settleWalletTopupFromVerify } from "@/lib/webhooks/wallet-topup";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/nomba-client", () => ({
@@ -17,6 +19,8 @@ vi.mock("@/lib/nomba-client", () => ({
 }));
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
 vi.mock("@/lib/wallet/waterfall", () => ({ collectFromWallet: vi.fn() }));
+vi.mock("@/lib/webhooks/card-settlement", () => ({ settleCardChargeFromVerify: vi.fn() }));
+vi.mock("@/lib/webhooks/wallet-topup", () => ({ settleWalletTopupFromVerify: vi.fn() }));
 vi.mock("@workspace/db", () => ({
   prisma: {
     membership: { findMany: vi.fn() },
@@ -193,11 +197,15 @@ describe("charge sweep — THE CORE RULE", () => {
 
 describe("verify backstop", () => {
   it("marks a stale PENDING attempt FAILED when Nomba reports non-success", async () => {
-    routeFindMany({ stale: [{ id: "att-stale", orderReference: "cardchg_x" }] });
+    routeFindMany({
+      stale: [{ id: "att-stale", orderReference: "cardchg_x", purpose: "CONTRIBUTION" }],
+    });
     vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
       settled: false,
       status: "FAILED",
       transactionId: null,
+      feeMinor: null,
+      amountMinor: null,
     });
 
     const res = await POST(req());
@@ -208,17 +216,75 @@ describe("verify backstop", () => {
     );
   });
 
-  it("captures the txn id when a stale attempt actually settled", async () => {
-    routeFindMany({ stale: [{ id: "att-stale", orderReference: "cardchg_x" }] });
+  it("APPLIES a settled saved-card contribution (webhook was missed)", async () => {
+    routeFindMany({
+      stale: [
+        {
+          id: "att-stale",
+          orderReference: "cardchg_x",
+          purpose: "CONTRIBUTION",
+          cycleId: "cyc1",
+          membershipId: "m1",
+          amountMinor: 405_680,
+        },
+      ],
+    });
     vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
       settled: true,
       status: "SUCCESS",
       transactionId: "TXVERIFY",
+      feeMinor: 5_680,
+      amountMinor: 405_680,
     });
 
     const res = await POST(req());
     const { data } = await res.json();
     expect(data.verifyCaptured).toBe(1);
+    expect(settleCardChargeFromVerify).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "att-stale" }),
+      { transactionId: "TXVERIFY", feeMinor: 5_680, grossMinor: 405_680 }
+    );
+  });
+
+  it("APPLIES a settled saved-card wallet top-up (webhook was missed)", async () => {
+    routeFindMany({
+      stale: [
+        { id: "att-topup", orderReference: "wallettopup_x", purpose: "TOPUP", amountMinor: 507_100 },
+      ],
+    });
+    vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+      settled: true,
+      status: "SUCCESS",
+      transactionId: "TXTOP",
+      feeMinor: 7_100,
+      amountMinor: 507_100,
+    });
+
+    const res = await POST(req());
+    const { data } = await res.json();
+    expect(data.verifyCaptured).toBe(1);
+    expect(settleWalletTopupFromVerify).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "att-topup" }),
+      { transactionId: "TXTOP", feeMinor: 7_100, grossMinor: 507_100 }
+    );
+  });
+
+  it("only captures the txn id for an ENROLLMENT (needs the webhook's tokenKey)", async () => {
+    routeFindMany({
+      stale: [{ id: "att-enroll", orderReference: "cardenroll_x", purpose: "ENROLLMENT" }],
+    });
+    vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
+      settled: true,
+      status: "SUCCESS",
+      transactionId: "TXVERIFY",
+      feeMinor: null,
+      amountMinor: null,
+    });
+
+    const res = await POST(req());
+    const { data } = await res.json();
+    expect(data.verifyCaptured).toBe(1);
+    expect(settleCardChargeFromVerify).not.toHaveBeenCalled();
     expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { nombaTransactionId: "TXVERIFY" } })
     );

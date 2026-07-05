@@ -6,6 +6,7 @@ import { applyContributionSplit } from "../reconciliation/apply";
 import { creditWallet } from "@/lib/wallet/ledger";
 import { handleWalletCardTopup } from "./wallet-topup";
 import { createNotification } from "@/lib/notifications";
+import { CARD_FEE_RATE } from "@/lib/fees";
 
 type CardKind = "cardenroll" | "cardverify" | "cardchg";
 
@@ -198,7 +199,7 @@ async function settleVerification(
   });
 }
 
-async function settleContribution(
+export async function settleContribution(
   attempt: ChargeAttempt,
   kind: "cardenroll" | "cardchg",
   data: {
@@ -333,6 +334,34 @@ async function settleContribution(
       kind === "cardenroll"
         ? "Your card was saved and this cycle's contribution was collected automatically."
         : "We collected this cycle's contribution from your saved card.",
+  });
+}
+
+/**
+ * Verify backstop for a saved-card cycle payment (`cardchg`) whose settlement
+ * webhook was missed. Applies the NET to the cycle's pot using the exact fee/
+ * amount when Nomba reports them, else estimates from the grossed charge.
+ * Idempotent with the webhook via the shared `card_<attemptId>` InboundTransfer
+ * key. Only cardchg (saved card) is settleable here — cardenroll/cardverify
+ * need the tokenKey that ONLY the webhook carries, so those still wait for it.
+ */
+export async function settleCardChargeFromVerify(
+  attempt: ChargeAttempt,
+  verify: { transactionId: string | null; feeMinor: number | null; grossMinor: number | null }
+): Promise<void> {
+  const grossMinor = verify.grossMinor ?? attempt.amountMinor; // charged (gross)
+  const feeMinor =
+    verify.feeMinor ?? grossMinor - Math.round(grossMinor * (1 - CARD_FEE_RATE));
+  const netMinor = Math.max(0, grossMinor - feeMinor);
+  await settleContribution(attempt, "cardchg", {
+    tokenKey: undefined, // saved-card charge — card already exists, nothing to create
+    last4: null,
+    cardType: null,
+    nombaTxId: verify.transactionId ?? "",
+    netMinor,
+    feeMinor,
+    currency: "NGN",
+    time: undefined,
   });
 }
 

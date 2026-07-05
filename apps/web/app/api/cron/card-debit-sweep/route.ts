@@ -15,6 +15,8 @@ import {
 } from "@/lib/cards/enrollment";
 import { grossUpForCardFee } from "@/lib/fees";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
+import { settleCardChargeFromVerify } from "@/lib/webhooks/card-settlement";
+import { settleWalletTopupFromVerify } from "@/lib/webhooks/wallet-topup";
 
 const VERIFY_STALE_MINUTES = 30;
 const MAX_REFUND_RETRIES = 3;
@@ -196,19 +198,32 @@ export async function POST(request: Request) {
   }
 
   // ── Pass 2: VERIFY BACKSTOP ────────────────────────────────────────────────
+  // For PENDING attempts older than 30 min, ask Nomba the truth. When SETTLED we
+  // now APPLY the money ourselves (the webhook was missed) for saved-card flows —
+  // idempotent with a late webhook via the shared deterministic InboundTransfer
+  // key. cardenroll/cardverify still only capture the txn id: they need the
+  // tokenKey that ONLY the webhook carries, so they wait for it. Non-success →
+  // FAILED so the next retry is unblocked.
   const staleBefore = new Date(now - VERIFY_STALE_MINUTES * 60 * 1000);
   const stalePending = await prisma.chargeAttempt.findMany({
     where: { status: "PENDING", createdAt: { lt: staleBefore } },
-    select: { id: true, orderReference: true },
   });
 
   for (const a of stalePending) {
     try {
       const res = await verifyCheckoutTransaction(a.orderReference);
       if (res.settled) {
-        // Capture the txn id; leave PENDING so the (retrying) webhook completes
-        // card creation + the pot application with the tokenKey it carries.
-        if (res.transactionId) {
+        const verify = {
+          transactionId: res.transactionId,
+          feeMinor: res.feeMinor,
+          grossMinor: res.amountMinor,
+        };
+        if (a.purpose === "TOPUP") {
+          await settleWalletTopupFromVerify(a, verify);
+        } else if (a.purpose === "CONTRIBUTION" && a.cycleId && a.membershipId) {
+          await settleCardChargeFromVerify(a, verify);
+        } else if (res.transactionId) {
+          // ENROLLMENT/VERIFICATION — capture the txn id, wait for the webhook.
           await prisma.chargeAttempt.update({
             where: { id: a.id },
             data: { nombaTransactionId: res.transactionId },

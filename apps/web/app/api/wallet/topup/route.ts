@@ -64,6 +64,20 @@ export async function POST(req: Request) {
       return apiError("That card is no longer usable. Add a new card.", 409);
     }
 
+    // Durable record BEFORE the charge — this is what lets the verify sweep
+    // reconcile the top-up if Nomba's settlement webhook never reaches us.
+    const attempt = await prisma.chargeAttempt.create({
+      data: {
+        userId,
+        savedCardId,
+        purpose: "TOPUP",
+        amountMinor: chargedMinor,
+        orderReference,
+        attemptNumber: 0,
+        status: "PENDING",
+      },
+    });
+
     try {
       await chargeTokenizedCard({
         orderReference,
@@ -77,6 +91,10 @@ export async function POST(req: Request) {
         "[wallet/topup] tokenized charge failed:",
         err instanceof Error ? err.message : err
       );
+      await prisma.chargeAttempt.update({
+        where: { id: attempt.id },
+        data: { status: "FAILED", failureReason: "charge_request_failed" },
+      });
       return apiError("Could not charge that card. Please try again.", 502);
     }
 

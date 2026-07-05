@@ -13,7 +13,12 @@ vi.mock("@/lib/nomba-client", () => ({
   createCheckoutOrder: vi.fn(),
   chargeTokenizedCard: vi.fn(),
 }));
-vi.mock("@workspace/db", () => ({ prisma: { savedCard: { findUnique: vi.fn() } } }));
+vi.mock("@workspace/db", () => ({
+  prisma: {
+    savedCard: { findUnique: vi.fn() },
+    chargeAttempt: { create: vi.fn(), update: vi.fn() },
+  },
+}));
 
 function req(body: unknown) {
   return new NextRequest("http://localhost/api/wallet/topup", {
@@ -31,6 +36,7 @@ describe("POST /api/wallet/topup", () => {
       checkoutLink: "https://pay.nomba/topup",
       orderReference: "ref",
     });
+    vi.mocked(prisma.chargeAttempt.create).mockResolvedValue({ id: "att1" } as never);
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -92,6 +98,31 @@ describe("POST /api/wallet/topup", () => {
     expect(chargeArg.orderReference.length).toBeLessThanOrEqual(50);
     expect(chargeArg.metadata).toMatchObject({ kind: "wallettopup", userId: "u1" });
     expect(createCheckoutOrder).not.toHaveBeenCalled();
+
+    // Durable record so a missed settlement webhook is reconcilable by the sweep.
+    const attemptArg = vi.mocked(prisma.chargeAttempt.create).mock.calls[0]![0];
+    expect(attemptArg.data).toMatchObject({
+      userId: "u1",
+      purpose: "TOPUP",
+      status: "PENDING",
+      orderReference: chargeArg.orderReference,
+    });
+  });
+
+  it("saved card: 502 and marks the durable attempt FAILED when the charge throws", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "ACTIVE",
+      tokenKey: "TK_SECRET",
+    } as never);
+    vi.mocked(chargeTokenizedCard).mockRejectedValue(new Error("nomba down"));
+
+    const res = await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }));
+    expect(res.status).toBe(502);
+    expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "att1" }, data: expect.objectContaining({ status: "FAILED" }) })
+    );
   });
 
   it("saved card: 404 when the card isn't the user's", async () => {
