@@ -3,6 +3,8 @@ import { ReconciliationTable } from "@/features/reconciliation/components/reconc
 import { OrphansTable } from "@/features/reconciliation/components/orphans-table"
 import { TreasuryReconciliation } from "@/features/reconciliation/components/treasury-reconciliation"
 
+export const metadata = { title: "Reconciliation" }
+
 export default function ReconciliationPage() {
   return (
     <div className="space-y-6">

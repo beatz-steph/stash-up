@@ -1,5 +1,7 @@
 import { AuditTable } from "@/features/audit/components/audit-table"
 
+export const metadata = { title: "Audit log" }
+
 export default function AuditPage() {
   return (
     <div className="space-y-6">

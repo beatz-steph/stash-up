@@ -2,6 +2,8 @@ import { redirect } from "next/navigation"
 import { requireSuperAdmin } from "@/lib/access-control"
 import { ConfigCard } from "@/features/settings/components/config-card"
 
+export const metadata = { title: "Settings" }
+
 export default async function SettingsPage() {
   const { error } = await requireSuperAdmin()
   if (error) {

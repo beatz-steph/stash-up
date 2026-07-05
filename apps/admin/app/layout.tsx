@@ -22,8 +22,16 @@ const fontMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "StashUp Admin",
+  // Template so each page's own `title` renders as "Users · StashUp Admin".
+  title: {
+    default: "StashUp Admin",
+    template: "%s · StashUp Admin",
+  },
   description: "Platform management for StashUp Savings Circles",
+  icons: [
+    { rel: "icon", type: "image/svg+xml", url: "/icon.svg", media: "(prefers-color-scheme: light)" },
+    { rel: "icon", type: "image/svg+xml", url: "/icon-dark.svg", media: "(prefers-color-scheme: dark)" },
+  ],
 };
 
 export default function RootLayout({

@@ -1,5 +1,7 @@
 import { WebhooksTable } from "@/features/webhooks/components/webhooks-table"
 
+export const metadata = { title: "Webhooks" }
+
 export default function WebhooksPage() {
   return (
     <div className="space-y-6">

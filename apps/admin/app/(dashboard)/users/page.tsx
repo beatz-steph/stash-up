@@ -1,5 +1,7 @@
 import { UsersTable } from "@/features/users/components/users-table"
 
+export const metadata = { title: "Users" }
+
 export default function UsersPage() {
   return (
     <div className="space-y-6">

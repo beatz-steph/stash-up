@@ -1,5 +1,7 @@
 import { PayoutsTable } from "@/features/payouts/components/payouts-table"
 
+export const metadata = { title: "Payouts" }
+
 export default function PayoutsPage() {
   return (
     <div className="space-y-6">

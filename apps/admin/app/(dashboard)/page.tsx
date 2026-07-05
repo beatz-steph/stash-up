@@ -20,6 +20,8 @@ function naira(minor: number): string {
   return `₦${(minor / 100).toLocaleString("en-NG")}`
 }
 
+export const metadata = { title: "Overview" }
+
 export default async function DashboardPage() {
   const session = await getAdminSession()
   if (!session) {

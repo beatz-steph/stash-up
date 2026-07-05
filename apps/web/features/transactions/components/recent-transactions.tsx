@@ -35,7 +35,7 @@ export function RecentTransactions() {
         )}
       </div>
 
-      <div className="rounded-su-xl border border-su-hairline bg-su-surface-card">
+      <div className="overflow-hidden rounded-su-xl border border-su-hairline bg-su-surface-card">
         {isLoading ? (
           <div className="space-y-3 p-su-lg">
             {Array.from({ length: 3 }).map((_, i) => (

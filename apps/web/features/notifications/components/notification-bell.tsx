@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation"
 import { Bell, Loader2 } from "lucide-react"
 import { Button } from "@workspace/ui/components/button"
 import { Badge } from "@workspace/ui/components/badge"
-import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import {
   Popover,
   PopoverContent,
@@ -71,7 +70,7 @@ export function NotificationBell() {
           )}
         </div>
 
-        <ScrollArea className="max-h-96">
+        <div className="max-h-96 overflow-y-auto overflow-x-hidden overscroll-contain">
           {items.length === 0 ? (
             <p className="px-4 py-8 text-center font-su-sans text-su-body-sm text-su-muted">
               You&apos;re all caught up.
@@ -91,11 +90,11 @@ export function NotificationBell() {
                       {!n.readAt && (
                         <span className="mt-1.5 h-2 w-2 shrink-0 rounded-su-full bg-su-primary" />
                       )}
-                      <div className="space-y-0.5">
-                        <p className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <p className="break-words font-su-sans text-su-body-sm font-semibold text-su-ink">
                           {n.title}
                         </p>
-                        <p className="font-su-sans text-su-caption text-su-muted leading-snug">
+                        <p className="break-words font-su-sans text-su-caption text-su-muted leading-snug">
                           {n.body}
                         </p>
                         <p className="font-su-sans text-su-caption-sm text-su-muted-soft">
@@ -121,7 +120,7 @@ export function NotificationBell() {
               </button>
             </div>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   )

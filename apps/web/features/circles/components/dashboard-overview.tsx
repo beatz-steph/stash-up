@@ -23,13 +23,13 @@ function StatCard({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-su-xl border border-su-hairline bg-su-surface-card p-su-lg">
+    <div className="min-w-0 rounded-su-xl border border-su-hairline bg-su-surface-card p-su-base sm:p-su-lg">
       <div className="flex items-center gap-2 text-su-muted">
         {icon}
-        <span className="font-su-sans text-su-caption font-medium">{label}</span>
+        <span className="truncate font-su-sans text-su-caption font-medium">{label}</span>
       </div>
       <p
-        className={`mt-3 text-su-title-lg font-semibold text-su-ink ${
+        className={`mt-3 break-words text-su-title-sm font-semibold text-su-ink sm:text-su-title-lg ${
           mono
             ? "font-su-mono [font-feature-settings:'tnum']"
             : "font-su-display tracking-su-title-lg"

@@ -1,5 +1,7 @@
 import { CirclesTable } from "@/features/circles/components/circles-table"
 
+export const metadata = { title: "Circles" }
+
 export default function CirclesPage() {
   return (
     <div className="space-y-6">
