@@ -62,7 +62,8 @@ describe("POST /api/wallet/topup", () => {
 
     const orderArg = vi.mocked(createCheckoutOrder).mock.calls[0]![0];
     expect(orderArg.amountMinor).toBe(data.chargedMinor);
-    expect(orderArg.tokenizeCard).toBe(false);
+    // Tokenizing forces the hosted checkout to card-only AND saves the card.
+    expect(orderArg.tokenizeCard).toBe(true);
     expect(orderArg.metadata).toMatchObject({ kind: "wallettopup", userId: "u1", netMinor: "1000000" });
     // Nomba caps orderReference at 50 chars.
     expect(orderArg.orderReference.length).toBeLessThanOrEqual(50);

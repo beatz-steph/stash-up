@@ -5,7 +5,7 @@ import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 import { prisma } from "@workspace/db";
 import { createCheckoutOrder, chargeTokenizedCard } from "@/lib/nomba-client";
 import { grossUpForCardFee, cardFeeOn } from "@/lib/fees";
-import { checkoutCallbackUrl, orderNonce } from "@/lib/cards/enrollment";
+import { walletTopupCallbackUrl, orderNonce } from "@/lib/cards/enrollment";
 import { WalletTopupReqSchema, type WalletTopupRes } from "../dto/wallet.dto";
 
 /**
@@ -95,8 +95,11 @@ export async function POST(req: Request) {
       orderReference,
       customerEmail: session.user.email,
       amountMinor: chargedMinor,
-      callbackUrl: checkoutCallbackUrl(),
-      tokenizeCard: false, // one-off top-up; not saving the card
+      callbackUrl: walletTopupCallbackUrl(),
+      // Tokenize: restricts the hosted checkout to card-only (a transfer/USSD
+      // payment would credit the wallet but leave no card) AND saves the card
+      // on settlement so the next top-up is one tap.
+      tokenizeCard: true,
       metadata,
     });
 

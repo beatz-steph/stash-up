@@ -8,7 +8,10 @@ import type { WebhookReceipt, VirtualAccount } from "@workspace/db";
 vi.mock("@/lib/wallet/ledger", () => ({ creditWallet: vi.fn() }));
 vi.mock("@/lib/notifications", () => ({ createNotification: vi.fn() }));
 
-const tx = { inboundTransfer: { create: vi.fn() } };
+const tx = {
+  inboundTransfer: { create: vi.fn() },
+  savedCard: { findFirst: vi.fn(), create: vi.fn() },
+};
 vi.mock("@workspace/db", () => ({
   Prisma: {},
   prisma: { $transaction: vi.fn() },
@@ -101,5 +104,40 @@ describe("handleWalletCardTopup", () => {
     await handleWalletCardTopup(receipt, payload(10_000, 140, "disco"));
     expect(tx.inboundTransfer.create).not.toHaveBeenCalled();
     expect(creditWallet).not.toHaveBeenCalled();
+  });
+
+  function tokenizedPayload(): NombaWebhookPayload {
+    const p = payload(10_000, 140);
+    p.data!.tokenizedCardData = { tokenKey: "TK_NEW", cardType: "Visa" };
+    p.data!.order!.cardLast4Digits = "4242";
+    return p;
+  }
+
+  it("saves the tokenized card for future one-tap top-ups", async () => {
+    tx.savedCard.findFirst.mockResolvedValue(null);
+    await handleWalletCardTopup(receipt, tokenizedPayload());
+    expect(tx.savedCard.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "u1",
+        tokenKey: "TK_NEW",
+        last4: "4242",
+        cardType: "Visa",
+        status: "ACTIVE",
+      }),
+    });
+  });
+
+  it("does not duplicate an already-saved card (same tokenKey)", async () => {
+    tx.savedCard.findFirst.mockResolvedValue({ id: "card-existing" });
+    await handleWalletCardTopup(receipt, tokenizedPayload());
+    expect(tx.savedCard.create).not.toHaveBeenCalled();
+    // The wallet credit still happens — only the card save is skipped.
+    expect(creditWallet).toHaveBeenCalled();
+  });
+
+  it("does not touch saved cards for a non-tokenized settlement", async () => {
+    await handleWalletCardTopup(receipt, payload(10_000, 140));
+    expect(tx.savedCard.findFirst).not.toHaveBeenCalled();
+    expect(tx.savedCard.create).not.toHaveBeenCalled();
   });
 });

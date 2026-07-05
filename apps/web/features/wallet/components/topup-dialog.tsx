@@ -147,6 +147,13 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
               </div>
             )}
 
+            {!usingSavedCard && (
+              <p className="font-su-sans text-su-caption text-su-muted">
+                You&apos;ll enter your card on the secure checkout — it&apos;s saved (never the
+                full number) so your next top-up is one tap.
+              </p>
+            )}
+
             {cardValid ? (
               <p className="font-su-sans text-su-caption text-su-muted">
                 You&apos;ll be charged {formatNaira(cardAmountMinor + cardFeeOn(cardAmountMinor))} (incl.{" "}

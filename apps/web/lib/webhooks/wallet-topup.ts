@@ -74,7 +74,8 @@ export async function handleWalletBankTopup(
  * Card top-up settlement: a `payment_success` checkout tagged
  * `orderMetaData.kind = "wallettopup"`. Credits the NET amount that actually
  * landed (transactionAmount − fee), records the fee, and is idempotent via the
- * InboundTransfer unique key.
+ * InboundTransfer unique key. New-card top-ups tokenize at checkout, so the
+ * card is also saved here (deduped on tokenKey) for future one-tap top-ups.
  */
 export async function handleWalletCardTopup(
   receipt: WebhookReceipt,
@@ -82,6 +83,7 @@ export async function handleWalletCardTopup(
 ): Promise<void> {
   const transaction = payload.data?.transaction;
   const order = payload.data?.order;
+  const tokenized = payload.data?.tokenizedCardData;
   const meta = order?.orderMetaData;
   const userId = meta?.userId;
 
@@ -124,6 +126,27 @@ export async function handleWalletCardTopup(
       reference: inbound.id,
       idempotencyKey: `topup_${inbound.id}`,
     });
+
+    // Save the card for future one-tap top-ups. No unique on tokenKey, so
+    // dedup here — the same card re-tokenized must not create a second row.
+    if (tokenized?.tokenKey) {
+      const existing = await tx.savedCard.findFirst({
+        where: { userId, tokenKey: tokenized.tokenKey },
+        select: { id: true },
+      });
+      if (!existing) {
+        await tx.savedCard.create({
+          data: {
+            userId,
+            provider: "NOMBA",
+            tokenKey: tokenized.tokenKey,
+            last4: order?.cardLast4Digits ?? null,
+            cardType: tokenized.cardType ?? order?.cardType ?? null,
+            status: "ACTIVE",
+          },
+        });
+      }
+    }
   });
 
   await createNotification({

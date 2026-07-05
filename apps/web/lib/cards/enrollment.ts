@@ -129,6 +129,12 @@ export function checkoutCallbackUrl(circleId?: string): string {
   return circleId ? `${base}/circles/${circleId}?card=added` : `${base}/settings?card=added`;
 }
 
+/** Wallet top-ups come back to the homepage — that's where the wallet lives. */
+export function walletTopupCallbackUrl(): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.stashup.xyz";
+  return `${base}/?topup=pending`;
+}
+
 /** Webhook-routing metadata echoed back by Nomba in orderMetaData. No PII. */
 export function enrollMetadata(params: {
   kind: "cardenroll" | "cardverify";
