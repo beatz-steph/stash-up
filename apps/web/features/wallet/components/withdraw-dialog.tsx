@@ -90,7 +90,6 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
                 onChange={setNewPin}
                 autoFocus
                 disabled={setPin.isPending}
-                onComplete={(v) => setPin.mutate(v, { onSuccess: () => setNewPin("") })}
               />
             </div>
             <DialogFooter>
@@ -126,14 +125,7 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
             </div>
             <div className="space-y-2">
               <Label className="block text-center">Transaction PIN</Label>
-              <PinField
-                value={pin}
-                onChange={setPin_}
-                disabled={withdraw.isPending}
-                onComplete={() => {
-                  if (amountValid) handleWithdraw()
-                }}
-              />
+              <PinField value={pin} onChange={setPin_} disabled={withdraw.isPending} />
             </div>
             <DialogFooter>
               <Button
