@@ -18,6 +18,7 @@ import { formatNaira } from "@/lib/money"
 import { transferFeeMinor } from "@/lib/fees"
 import { usePinStatus } from "../queries"
 import { useSetWalletPin, useWithdrawFromWallet } from "../mutations"
+import { PinField, PIN_LENGTH } from "./pin-field"
 
 export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
   const [open, setOpen] = useState(false)
@@ -33,7 +34,8 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
   const feeMinor = amountMinor > 0 ? transferFeeMinor(amountMinor) : 0
   const totalMinor = amountMinor + feeMinor
   const amountValid = amountMinor > 0 && totalMinor <= balanceMinor
-  const pinValid = /^\d{4,6}$/.test(pin)
+  const pinValid = pin.length === PIN_LENGTH
+  const newPinValid = newPin.length === PIN_LENGTH
 
   function reset() {
     setNewPin("")
@@ -80,19 +82,20 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
             <Loader2 className="h-5 w-5 animate-spin text-su-muted" />
           </div>
         ) : needsPin ? (
-          <div className="space-y-3">
-            <Label htmlFor="new-pin">New transaction PIN (4–6 digits)</Label>
-            <Input
-              id="new-pin"
-              type="password"
-              inputMode="numeric"
-              value={newPin}
-              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="••••"
-            />
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label className="block text-center">Choose a {PIN_LENGTH}-digit PIN</Label>
+              <PinField
+                value={newPin}
+                onChange={setNewPin}
+                autoFocus
+                disabled={setPin.isPending}
+                onComplete={(v) => setPin.mutate(v, { onSuccess: () => setNewPin("") })}
+              />
+            </div>
             <DialogFooter>
               <Button
-                disabled={!/^\d{4,6}$/.test(newPin) || setPin.isPending}
+                disabled={!newPinValid || setPin.isPending}
                 onClick={() => setPin.mutate(newPin, { onSuccess: () => setNewPin("") })}
               >
                 {setPin.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -122,14 +125,14 @@ export function WithdrawDialog({ balanceMinor }: { balanceMinor: number }) {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="wd-pin">Transaction PIN</Label>
-              <Input
-                id="wd-pin"
-                type="password"
-                inputMode="numeric"
+              <Label className="block text-center">Transaction PIN</Label>
+              <PinField
                 value={pin}
-                onChange={(e) => setPin_(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="••••"
+                onChange={setPin_}
+                disabled={withdraw.isPending}
+                onComplete={() => {
+                  if (amountValid) handleWithdraw()
+                }}
               />
             </div>
             <DialogFooter>
