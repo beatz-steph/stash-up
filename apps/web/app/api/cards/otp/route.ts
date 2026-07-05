@@ -3,7 +3,12 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 import { submitCardOtp } from "@/lib/nomba-client";
-import { CardOtpReqSchema, type CardOtpRes } from "./dto/card-otp.dto";
+import {
+  CardOtpReqSchema,
+  CardOtpCancelReqSchema,
+  type CardOtpRes,
+  type CardOtpCancelRes,
+} from "./dto/card-otp.dto";
 
 /**
  * Complete a 3DS/OTP-gated tokenized card charge. On some Nomba accounts a
@@ -57,4 +62,37 @@ export async function POST(req: Request) {
   // Charge completes at Nomba now; the settlement webhook (or verify backstop)
   // applies the money and flips the attempt to SUCCESS.
   return apiSuccess<CardOtpRes>({ submitted: true, message: result.message || "success" });
+}
+
+/**
+ * Abandon an OTP-gated charge the customer closed without completing. Marks the
+ * still-PENDING attempt FAILED so an immediate retry isn't blocked by the
+ * "already processing" guard. Idempotent: a non-PENDING attempt is a no-op. We
+ * do NOT cancel at Nomba — an un-OTP'd charge simply expires, and if it somehow
+ * still settles, the webhook's idempotent apply keeps the money attributable.
+ */
+export async function DELETE(req: Request) {
+  const session = await getSession();
+  if (!session?.user) return apiError("Unauthorized", 401);
+
+  const parsed = CardOtpCancelReqSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return apiError("Invalid request", 422);
+
+  const attempt = await prisma.chargeAttempt.findUnique({
+    where: { orderReference: parsed.data.orderReference },
+    select: { id: true, userId: true, status: true },
+  });
+  if (!attempt || attempt.userId !== session.user.id) {
+    return apiError("Payment not found", 404);
+  }
+  if (attempt.status !== "PENDING") {
+    // Already settled/failed — nothing to abandon.
+    return apiSuccess<CardOtpCancelRes>({ cancelled: false });
+  }
+
+  await prisma.chargeAttempt.update({
+    where: { id: attempt.id },
+    data: { status: "FAILED", failureReason: "otp_abandoned" },
+  });
+  return apiSuccess<CardOtpCancelRes>({ cancelled: true });
 }

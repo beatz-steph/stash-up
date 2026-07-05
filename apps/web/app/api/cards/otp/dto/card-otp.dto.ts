@@ -20,3 +20,17 @@ export const CardOtpResSchema = z.object({
   message: z.string(),
 });
 export type CardOtpRes = z.infer<typeof CardOtpResSchema>;
+
+/**
+ * DELETE /api/cards/otp — abandon an OTP-gated charge the customer never
+ * completed, so a retry isn't blocked by the still-PENDING attempt.
+ */
+export const CardOtpCancelReqSchema = z.object({
+  orderReference: z.string().min(1),
+});
+export type CardOtpCancelReq = z.infer<typeof CardOtpCancelReqSchema>;
+
+export const CardOtpCancelResSchema = z.object({
+  cancelled: z.boolean(),
+});
+export type CardOtpCancelRes = z.infer<typeof CardOtpCancelResSchema>;

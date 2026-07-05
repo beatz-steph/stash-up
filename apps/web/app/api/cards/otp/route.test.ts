@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { POST } from "./route";
+import { POST, DELETE } from "./route";
 import { prisma } from "@workspace/db";
 import { getSession } from "@/lib/session";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
@@ -11,12 +11,12 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }
 vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
 vi.mock("@/lib/nomba-client", () => ({ submitCardOtp: vi.fn() }));
 vi.mock("@workspace/db", () => ({
-  prisma: { chargeAttempt: { findUnique: vi.fn() } },
+  prisma: { chargeAttempt: { findUnique: vi.fn(), update: vi.fn() } },
 }));
 
-function req(body: unknown) {
+function req(body: unknown, method = "POST") {
   return new NextRequest("http://localhost/api/cards/otp", {
-    method: "POST",
+    method,
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
@@ -81,5 +81,45 @@ describe("POST /api/cards/otp", () => {
   it("502 when the Nomba call throws", async () => {
     vi.mocked(submitCardOtp).mockRejectedValue(new Error("nomba down"));
     expect((await POST(req(OK))).status).toBe(502);
+  });
+});
+
+describe("DELETE /api/cards/otp (abandon)", () => {
+  const body = { orderReference: "cardchg_x" };
+
+  it("401 when unauthenticated", async () => {
+    vi.mocked(getSession).mockResolvedValue(null);
+    expect((await DELETE(req(body, "DELETE"))).status).toBe(401);
+  });
+
+  it("404 when the charge isn't the caller's", async () => {
+    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+      id: "a1", userId: "someone-else", status: "PENDING",
+    } as never);
+    expect((await DELETE(req(body, "DELETE"))).status).toBe(404);
+  });
+
+  it("fails the PENDING attempt so a retry isn't blocked", async () => {
+    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+      id: "a1", userId: "u1", status: "PENDING",
+    } as never);
+    const res = await DELETE(req(body, "DELETE"));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.cancelled).toBe(true);
+    expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "a1" }, data: { status: "FAILED", failureReason: "otp_abandoned" } })
+    );
+  });
+
+  it("is a no-op when the attempt already settled (not PENDING)", async () => {
+    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+      id: "a1", userId: "u1", status: "SUCCESS",
+    } as never);
+    const res = await DELETE(req(body, "DELETE"));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.cancelled).toBe(false);
+    expect(prisma.chargeAttempt.update).not.toHaveBeenCalled();
   });
 });

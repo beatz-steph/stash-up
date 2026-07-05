@@ -7,9 +7,10 @@ import {
   unlinkAutoDebit,
   toggleWalletAutoDebit,
   submitCardOtp,
+  cancelCardOtp,
 } from "@/lib/api/data/cards"
 import type { EnrollCardReq, LinkAutoDebitReq } from "@/app/api/cards/dto/cards.dto"
-import type { CardOtpReq } from "@/app/api/cards/otp/dto/card-otp.dto"
+import type { CardOtpReq, CardOtpCancelReq } from "@/app/api/cards/otp/dto/card-otp.dto"
 import { CARD_QUERY_KEYS } from "./queries"
 import { CIRCLE_QUERY_KEYS } from "../circles/queries"
 import { WALLET_QUERY_KEYS } from "../wallet/queries"
@@ -95,6 +96,17 @@ export function useSubmitCardOtp() {
       toast.success("OTP confirmed — your payment is completing")
     },
     // Errors are surfaced inline in the OTP dialog, not toasted.
+  })
+}
+
+/**
+ * Abandon an OTP-gated charge (customer closed the OTP dialog) so the still-
+ * PENDING attempt is failed and an immediate retry isn't blocked. Fire-and-
+ * forget — nothing to toast.
+ */
+export function useCancelCardOtp() {
+  return useMutation({
+    mutationFn: (body: CardOtpCancelReq) => cancelCardOtp(body),
   })
 }
 

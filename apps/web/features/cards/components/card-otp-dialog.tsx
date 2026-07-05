@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Loader2, ShieldCheck } from "lucide-react"
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
 } from "@workspace/ui/components/dialog"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
-import { useSubmitCardOtp } from "../mutations"
+import { useSubmitCardOtp, useCancelCardOtp } from "../mutations"
 
 /** Identifiers returned by a 3DS-gated card charge, needed to submit the OTP. */
 export interface CardOtpHandle {
@@ -39,9 +39,22 @@ export function CardOtpDialog({
 }) {
   const [otp, setOtp] = useState("")
   const submit = useSubmitCardOtp()
+  const cancel = useCancelCardOtp()
+  const succeededRef = useRef(false)
   const valid = /^\d{4,8}$/.test(otp)
 
+  // The dialog persists between charges — clear the success flag each time a new
+  // OTP flow opens, so abandoning THIS one still cancels it.
+  useEffect(() => {
+    if (handle) succeededRef.current = false
+  }, [handle])
+
+  /** Dismiss the OTP step. If it was NOT completed, abandon the charge so its
+   *  still-PENDING attempt is failed and an immediate retry isn't blocked. */
   function close() {
+    if (handle && !succeededRef.current) {
+      cancel.mutate({ orderReference: handle.orderReference }) // fire-and-forget
+    }
     setOtp("")
     submit.reset()
     onClose()
@@ -53,6 +66,7 @@ export function CardOtpDialog({
       { orderReference: handle.orderReference, transactionId: handle.transactionId, otp },
       {
         onSuccess: () => {
+          succeededRef.current = true
           setOtp("")
           submit.reset()
           onClose()
