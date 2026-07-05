@@ -593,15 +593,20 @@ const SubmitOtpResponseSchema = z.object({
 
 /**
  * Complete a 3DS/OTP-gated tokenized charge by submitting the OTP the customer
- * received. `transactionId` is the `orderId` returned by `chargeTokenizedCard`.
- * On success Nomba finishes the charge and fires the settlement webhook, which
- * our existing handlers apply. NEVER log the OTP.
+ * received. On success Nomba finishes the charge and fires the settlement
+ * webhook, which our existing handlers apply. NEVER log the OTP.
+ *
+ * Nomba returns HTTP 200 with an envelope: `code === "00"` is success; anything
+ * else (e.g. "No valid transaction found…", "Invalid OTP") is a business error
+ * surfaced via `code`/`message` — we DON'T throw on those so the caller can
+ * distinguish a wrong transaction id from a wrong OTP. Only transport failures
+ * throw.
  */
 export async function submitCardOtp(params: {
   otp: string;
   orderReference: string;
   transactionId: string;
-}): Promise<{ status: boolean; message: string }> {
+}): Promise<{ status: boolean; code: string; message: string }> {
   const res = await nombaFetch("/v1/checkout/checkout-card-otp", {
     method: "POST",
     body: JSON.stringify({
@@ -616,15 +621,17 @@ export async function submitCardOtp(params: {
   }
 
   const data = await res.json();
-  const parsed = SubmitOtpResponseSchema.safeParse(data?.data);
-  if (!parsed.success) {
-    throw new Error(
-      `Submit card OTP: unexpected Nomba response (code=${data?.code ?? "?"}): ${
-        data?.description ?? "no data field"
-      }`
-    );
+  const code = String(data?.code ?? "");
+  const description = String(data?.description ?? "");
+  if (code === "00") {
+    const parsed = SubmitOtpResponseSchema.safeParse(data?.data);
+    return {
+      status: parsed.success ? parsed.data.status : true,
+      code,
+      message: parsed.success ? parsed.data.message : description || "success",
+    };
   }
-  return parsed.data;
+  return { status: false, code, message: description || "OTP submission failed" };
 }
 
 const RefundResponseSchema = z.object({

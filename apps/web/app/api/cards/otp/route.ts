@@ -2,7 +2,7 @@ import { apiSuccess, apiError } from "@/lib/api/response";
 import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
-import { submitCardOtp } from "@/lib/nomba-client";
+import { submitCardOtp, verifyCheckoutTransaction } from "@/lib/nomba-client";
 import {
   CardOtpReqSchema,
   CardOtpCancelReqSchema,
@@ -44,19 +44,50 @@ export async function POST(req: Request) {
     return apiError("Card payments are temporarily unavailable", 503);
   }
 
-  let result: { status: boolean; message: string };
+  // Nomba's checkout OTP endpoint keys on a transaction id whose source isn't
+  // documented for the tokenized flow: the charge response's `orderId` is
+  // rejected as "No valid transaction found", and the docs' own example uses the
+  // orderReference as the transactionId. So try the identifiers we have — the
+  // real transaction id from the transaction lookup first, then the
+  // orderReference, then the client-supplied orderId — moving on ONLY when Nomba
+  // says the transaction id was wrong (never re-submitting against a bad OTP).
+  const candidates: string[] = [];
   try {
-    result = await submitCardOtp({ otp, orderReference, transactionId });
-  } catch (err) {
-    console.error(
-      "[cards/otp] submit failed:",
-      err instanceof Error ? err.message : err
-    );
-    return apiError("That OTP couldn't be verified. Check it and try again.", 502);
+    const v = await verifyCheckoutTransaction(orderReference);
+    if (v.transactionId) candidates.push(v.transactionId);
+  } catch {
+    // lookup is best-effort — fall through to the other candidates
+  }
+  candidates.push(orderReference);
+  if (transactionId) candidates.push(transactionId);
+  const uniqueCandidates = [...new Set(candidates)];
+
+  let result: { status: boolean; code: string; message: string } | null = null;
+  for (const txId of uniqueCandidates) {
+    try {
+      result = await submitCardOtp({ otp, orderReference, transactionId: txId });
+    } catch (err) {
+      console.error(
+        "[cards/otp] submit transport error:",
+        err instanceof Error ? err.message : err
+      );
+      return apiError("That OTP couldn't be verified. Check it and try again.", 502);
+    }
+    if (result.status) {
+      // Log which candidate Nomba accepted so we can simplify to a single id
+      // once confirmed (id is not sensitive; the OTP is never logged).
+      console.log(`[cards/otp] OTP accepted with transactionId=${txId}`);
+      break;
+    }
+    // Only a wrong-transaction-id error is worth retrying with the next id; a
+    // real error (bad/expired OTP) should surface immediately.
+    if (!/no valid transaction|transaction not found|invalid transaction/i.test(result.message)) {
+      break;
+    }
   }
 
-  if (!result.status) {
-    return apiError(result.message || "That OTP was not accepted. Try again.", 400);
+  if (!result || !result.status) {
+    return apiError(result?.message || "That OTP was not accepted. Try again.", 400);
   }
 
   // Charge completes at Nomba now; the settlement webhook (or verify backstop)
