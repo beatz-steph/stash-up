@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { useCircleDetail, useVirtualAccount } from "../queries"
 import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
@@ -8,7 +7,7 @@ import { CycleHistory } from "./cycle-history"
 import { AutoSaveBlock } from "@/features/cards/components/auto-save-block"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
-import { Loader2, Copy, Check, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, Copy, Check, Landmark } from "lucide-react"
 
 import { Button } from "@workspace/ui/components/button"
 import { Progress } from "@workspace/ui/components/progress"
@@ -97,7 +96,6 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const { mutate: renewCircle, isPending: isRenewing } = useRenewCircle(circleId)
 
   const { data: vaData } = useVirtualAccount(circleId)
-  const [showAccount, setShowAccount] = useState(false)
 
   if (isLoading) {
     return (
@@ -155,7 +153,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const sortedMembers = [...circle.members].sort((a, b) => a.payoutPosition - b.payoutPosition)
 
   const va = vaData?.virtualAccount ?? null
-  const accountVisible = !!va && (!isPaidUpThisCycle || showAccount)
+  const hasHistory = (circle.cycles?.length ?? 0) > 0
 
   const statusPill = isForming
     ? "bg-su-accent-yellow/10 text-su-accent-yellow"
@@ -353,54 +351,11 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                 </p>
               )}
 
-              {accountVisible && va && (
-                <div className="space-y-3 rounded-su-lg bg-su-surface-muted p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
-                        Transfer to your circle account
-                      </span>
-                      <p className="font-su-mono text-su-title-md font-semibold text-su-ink [font-feature-settings:'tnum']">
-                        {va.bankAccountNumber}
-                      </p>
-                      <p className="font-su-sans text-su-caption text-su-muted">
-                        {va.bankName} · {va.bankAccountName}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-su-pill"
-                      onClick={() => {
-                        navigator.clipboard.writeText(va.bankAccountNumber)
-                        toast.success("Account number copied")
-                      }}
-                    >
-                      <Copy className="mr-1.5 h-3.5 w-3.5" />
-                      Copy
-                    </Button>
-                  </div>
-                  <p className="font-su-sans text-su-caption-sm text-su-muted">
-                    Transfers to this account are matched to your circle automatically — send any
-                    amount, extras carry over as credit.
-                  </p>
-                </div>
-              )}
-
-              {va && isPaidUpThisCycle && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-su-muted"
-                  onClick={() => setShowAccount((s) => !s)}
-                >
-                  {showAccount ? (
-                    <ChevronUp className="mr-1.5 h-4 w-4" />
-                  ) : (
-                    <ChevronDown className="mr-1.5 h-4 w-4" />
-                  )}
-                  {showAccount ? "Hide transfer details" : "Show transfer details"}
-                </Button>
+              {!isPaidUpThisCycle && (
+                <p className="font-su-sans text-su-caption text-su-muted">
+                  Pay by bank transfer or auto-save — both are under{" "}
+                  <span className="font-semibold text-su-ink">How you pay</span> below.
+                </p>
               )}
             </div>
 
@@ -538,88 +493,161 @@ export function CircleDetail({ circleId }: { circleId: string }) {
         </section>
       )}
 
-      {/* ── The rotation: the payout queue IS the member list ── */}
-      <section className="max-w-3xl">
-        <div className="flex items-baseline justify-between gap-3">
-          <SectionLabel>Rotation</SectionLabel>
-          {isActive && currentCycle && (
-            <span className="font-su-sans text-su-caption text-su-muted">
-              cycle {currentCycle.sequence} of {circle.totalSlots}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 font-su-sans text-su-caption text-su-muted">
-          Every cycle, each member pays in — and one collects the whole pot, in this order.
-        </p>
-
-        <ol className="mt-4 divide-y divide-su-hairline-soft">
-          {sortedMembers.map((member) => {
-            const collected = collectedIds.has(member.id)
-            const receiving =
-              isActive && !!currentCycle && member.id === currentCycle.recipientMembershipId && !collected
-            const isMe = member.user.id === session?.user?.id
-            const contribution = circle.contributions?.find((c) => c.membershipId === member.id)
-            const chip = CONTRIBUTION_CHIP[contribution?.status ?? "PENDING"] ?? CONTRIBUTION_CHIP.PENDING!
-
-            return (
-              <li
-                key={member.id}
-                className={`flex items-center gap-4 py-3.5 ${receiving ? "-mx-3 rounded-su-lg bg-su-primary/[0.04] px-3" : ""}`}
-              >
-                {/* Position in the queue: collected ✓ / collecting now / waiting */}
-                <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-su-full font-su-mono text-su-caption-sm font-semibold [font-feature-settings:'tnum'] ${
-                    collected
-                      ? "bg-su-semantic-up/10 text-su-semantic-up"
-                      : receiving
-                        ? "bg-su-primary text-white"
-                        : "bg-su-surface-strong text-su-muted"
-                  }`}
-                >
-                  {collected ? <Check className="h-3.5 w-3.5" /> : member.payoutPosition}
-                </span>
-
-                <Avatar className="h-9 w-9">
-                  <AvatarFallback className="bg-su-surface-strong font-su-sans text-su-caption-sm font-semibold text-su-ink">
-                    {initials(member.user.name)}
-                  </AvatarFallback>
-                </Avatar>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-su-sans text-su-body-sm font-semibold text-su-ink">
-                      {member.user.name}
-                      {isMe && <span className="font-normal text-su-muted"> (you)</span>}
-                    </span>
-                    {receiving && (
-                      <span className="rounded-su-pill bg-su-primary/10 px-2 py-0.5 font-su-sans text-su-caption-sm font-semibold text-su-primary">
-                        Collecting now
-                      </span>
-                    )}
-                  </div>
-                  <p className="font-su-mono text-su-caption-sm text-su-muted">
-                    @{member.user.username}
-                    {member.role === "CREATOR" && (
-                      <span className="font-su-sans"> · Creator</span>
-                    )}
-                  </p>
+      {/* ── How you pay: bank transfer + auto-save, one panel ── */}
+      {isActive && (
+        <section>
+          <SectionLabel>How you pay</SectionLabel>
+          <div className="mt-3 overflow-hidden rounded-su-xl border border-su-hairline bg-su-surface-card">
+            <div className="grid grid-cols-1 divide-y divide-su-hairline-soft lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+              {/* Manual: the dedicated funding account */}
+              <div className="space-y-4 p-5">
+                <div className="flex items-center gap-2">
+                  <Landmark className="h-4 w-4 text-su-primary" />
+                  <h3 className="font-su-sans text-su-body font-semibold text-su-ink">
+                    Bank transfer
+                  </h3>
                 </div>
 
-                {/* This cycle's payment state (active circles only) */}
-                {isActive && currentCycle && (
-                  <span className={`flex items-center gap-1.5 font-su-sans text-su-caption ${chip.text}`}>
-                    <span className={`h-1.5 w-1.5 rounded-su-full ${chip.dot}`} />
-                    {chip.label}
+                {va ? (
+                  <>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                          Your circle account
+                        </span>
+                        <p className="font-su-mono text-su-title-md font-semibold text-su-ink [font-feature-settings:'tnum']">
+                          {va.bankAccountNumber}
+                        </p>
+                        <p className="font-su-sans text-su-caption text-su-muted">
+                          {va.bankName} · {va.bankAccountName}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-su-pill"
+                        onClick={() => {
+                          navigator.clipboard.writeText(va.bankAccountNumber)
+                          toast.success("Account number copied")
+                        }}
+                      >
+                        <Copy className="mr-1.5 h-3.5 w-3.5" />
+                        Copy
+                      </Button>
+                    </div>
+                    <p className="font-su-sans text-su-caption-sm text-su-muted">
+                      Send any amount — transfers are matched to this circle automatically, and
+                      extras carry over as credit for your next cycle.
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-su-sans text-su-caption text-su-muted">
+                    Your funding account is still being set up. Check back shortly.
+                  </p>
+                )}
+              </div>
+
+              {/* Automatic: wallet-first + saved card */}
+              <div className="p-5">
+                <AutoSaveBlock
+                  circleId={circle.id}
+                  autoDebitCardId={circle.myAutoDebitCardId ?? null}
+                  autoDebitWallet={circle.myAutoDebitWallet ?? false}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── The rotation + past cycles, side by side ── */}
+      <div className={`grid grid-cols-1 items-start gap-8 ${hasHistory ? "lg:grid-cols-2" : ""}`}>
+        <section className={hasHistory ? "" : "max-w-3xl"}>
+          <div className="flex items-baseline justify-between gap-3">
+            <SectionLabel>Rotation</SectionLabel>
+            {isActive && currentCycle && (
+              <span className="font-su-sans text-su-caption text-su-muted">
+                cycle {currentCycle.sequence} of {circle.totalSlots}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 font-su-sans text-su-caption text-su-muted">
+            Every cycle, each member pays in — and one collects the whole pot, in this order.
+          </p>
+
+          <ol className="mt-4 divide-y divide-su-hairline-soft">
+            {sortedMembers.map((member) => {
+              const collected = collectedIds.has(member.id)
+              const receiving =
+                isActive && !!currentCycle && member.id === currentCycle.recipientMembershipId && !collected
+              const isMe = member.user.id === session?.user?.id
+              const contribution = circle.contributions?.find((c) => c.membershipId === member.id)
+              const chip = CONTRIBUTION_CHIP[contribution?.status ?? "PENDING"] ?? CONTRIBUTION_CHIP.PENDING!
+
+              return (
+                <li
+                  key={member.id}
+                  className={`flex items-center gap-4 py-3.5 ${receiving ? "-mx-3 rounded-su-lg bg-su-primary/[0.04] px-3" : ""}`}
+                >
+                  {/* Position in the queue: collected ✓ / collecting now / waiting */}
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-su-full font-su-mono text-su-caption-sm font-semibold [font-feature-settings:'tnum'] ${
+                      collected
+                        ? "bg-su-semantic-up/10 text-su-semantic-up"
+                        : receiving
+                          ? "bg-su-primary text-white"
+                          : "bg-su-surface-strong text-su-muted"
+                    }`}
+                  >
+                    {collected ? <Check className="h-3.5 w-3.5" /> : member.payoutPosition}
                   </span>
-                )}
-                {collected && !isActive && (
-                  <span className="font-su-sans text-su-caption text-su-semantic-up">Collected</span>
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      </section>
+
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback className="bg-su-surface-strong font-su-sans text-su-caption-sm font-semibold text-su-ink">
+                      {initials(member.user.name)}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-su-sans text-su-body-sm font-semibold text-su-ink">
+                        {member.user.name}
+                        {isMe && <span className="font-normal text-su-muted"> (you)</span>}
+                      </span>
+                      {receiving && (
+                        <span className="rounded-su-pill bg-su-primary/10 px-2 py-0.5 font-su-sans text-su-caption-sm font-semibold text-su-primary">
+                          Collecting now
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-su-mono text-su-caption-sm text-su-muted">
+                      @{member.user.username}
+                      {member.role === "CREATOR" && (
+                        <span className="font-su-sans"> · Creator</span>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* This cycle's payment state (active circles only) */}
+                  {isActive && currentCycle && (
+                    <span className={`flex items-center gap-1.5 font-su-sans text-su-caption ${chip.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-su-full ${chip.dot}`} />
+                      {chip.label}
+                    </span>
+                  )}
+                  {collected && !isActive && (
+                    <span className="font-su-sans text-su-caption text-su-semantic-up">Collected</span>
+                  )}
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+
+        {hasHistory && circle.cycles && (
+          <CycleHistory cycles={circle.cycles} members={circle.members} />
+        )}
+      </div>
 
       {/* ── Pending invites (forming only) ── */}
       {pendingInvites.length > 0 && (
@@ -666,21 +694,6 @@ export function CircleDetail({ circleId }: { circleId: string }) {
         </section>
       )}
 
-      {/* ── Quiet zone: settings + history ── */}
-      {(isActive || (circle.cycles?.length ?? 0) > 0) && (
-        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
-          {isActive && (
-            <AutoSaveBlock
-              circleId={circle.id}
-              autoDebitCardId={circle.myAutoDebitCardId ?? null}
-              autoDebitWallet={circle.myAutoDebitWallet ?? false}
-            />
-          )}
-          {circle.cycles && circle.cycles.length > 0 && (
-            <CycleHistory cycles={circle.cycles} members={circle.members} />
-          )}
-        </div>
-      )}
     </div>
   )
 }

@@ -28,6 +28,9 @@ function cardLabel(cardType: string | null, last4: string | null): string {
  * Auto-save controls for a single circle. A new circle never auto-debits an
  * existing card — the member explicitly links a saved card or adds a new one
  * (which binds to THIS circle only).
+ *
+ * Flat block (no surface of its own) — the circle-detail "How you pay" panel
+ * provides the border/padding, pairing this with the bank-transfer details.
  */
 export function AutoSaveBlock({
   circleId,
@@ -50,7 +53,7 @@ export function AutoSaveBlock({
   const busy = enroll.isPending || link.isPending || unlink.isPending
 
   return (
-    <div className="space-y-4 rounded-su-xl border border-su-hairline bg-su-surface-card p-5 shadow-[0_4px_12px_rgba(0,0,0,0.04)]">
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Zap className="h-4 w-4 text-su-primary" />
         <h3 className="font-su-sans text-su-body font-semibold text-su-ink">Auto-save</h3>
