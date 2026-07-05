@@ -229,17 +229,81 @@ async function getToken(): Promise<string> {
   return (await tokenPromise).access_token;
 }
 
-async function nombaFetch(path: string, init: RequestInit = {}): Promise<Response> {
+/**
+ * One structured log line per Nomba call — method, path (query stripped so refs
+ * never leak), HTTP status, latency, and the caller's idempotency ref
+ * (merchantTxRef / orderReference) when supplied. NEVER logs the token, request
+ * body, or any PAN/PII. This is the "structured logging on every Nomba call,
+ * tagged with merchantTxRef" go-live requirement.
+ */
+function logNomba(entry: {
+  method: string;
+  path: string;
+  status: number;
+  ms: number;
+  ok: boolean;
+  ref?: string;
+  error?: string;
+}): void {
+  const line: Record<string, unknown> = {
+    tag: "nomba",
+    method: entry.method,
+    path: entry.path,
+    status: entry.status,
+    ms: entry.ms,
+    ok: entry.ok,
+  };
+  if (entry.ref) line.merchantTxRef = entry.ref;
+  if (entry.error) line.error = entry.error;
+  console.log(JSON.stringify(line));
+}
+
+async function nombaFetch(
+  path: string,
+  init: RequestInit = {},
+  meta: { ref?: string } = {}
+): Promise<Response> {
   const token = await getToken();
-  return fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      accountId: ACCOUNT_ID,
-      Authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
-    },
-  });
+  const method = (init.method ?? "GET").toUpperCase();
+  const loggedPath = path.split("?")[0] ?? path; // strip query — it can carry refs/PII
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        accountId: ACCOUNT_ID,
+        Authorization: `Bearer ${token}`,
+        ...(init.headers ?? {}),
+      },
+    });
+    logNomba({ method, path: loggedPath, status: res.status, ms: Date.now() - startedAt, ok: res.ok, ref: meta.ref });
+    return res;
+  } catch (err) {
+    logNomba({
+      method,
+      path: loggedPath,
+      status: 0,
+      ms: Date.now() - startedAt,
+      ok: false,
+      ref: meta.ref,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Liveness probe for the health endpoint — confirms we can obtain a Nomba
+ * access token (cached or freshly issued). Never throws.
+ */
+export async function pingNombaAuth(): Promise<boolean> {
+  try {
+    const token = await getToken();
+    return typeof token === "string" && token.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 interface CreateVirtualAccountParams {
@@ -298,10 +362,11 @@ interface BankTransferParams {
 }
 
 export async function initiateSubAccountBankTransfer(params: BankTransferParams) {
-  const res = await nombaFetch(`/v2/transfers/bank/${SUB_ACCOUNT_ID}`, {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
+  const res = await nombaFetch(
+    `/v2/transfers/bank/${SUB_ACCOUNT_ID}`,
+    { method: "POST", body: JSON.stringify(params) },
+    { ref: params.merchantTxRef }
+  );
 
   if (!res.ok) {
     throw new Error(`Payout failed: ${res.status} ${await res.text()}`);
@@ -492,7 +557,7 @@ export async function createCheckoutOrder(params: {
       },
       tokenizeCard: params.tokenizeCard,
     }),
-  });
+  }, { ref: params.orderReference });
 
   if (!res.ok) {
     throw new Error(`Create checkout order failed: ${res.status} ${await res.text()}`);
@@ -540,7 +605,11 @@ export async function verifyCheckoutTransaction(orderReference: string): Promise
   amountMinor: number | null;
 }> {
   const qs = new URLSearchParams({ orderReference });
-  const res = await nombaFetch(`/v1/transactions/accounts/single?${qs.toString()}`);
+  const res = await nombaFetch(
+    `/v1/transactions/accounts/single?${qs.toString()}`,
+    {},
+    { ref: orderReference }
+  );
 
   if (!res.ok) {
     throw new Error(`Verify checkout transaction failed: ${res.status} ${await res.text()}`);
