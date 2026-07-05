@@ -95,9 +95,9 @@ describe("CircleDetail — payout section", () => {
     renderDetail()
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Trigger Payout/i })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /Send payout to yourself/i })).toBeInTheDocument()
     })
-    // Recipient is user-1 → shown as "You"
+    // Recipient is user-1 → shown as "You" in the recipient spotlight
     expect(screen.getByText("You")).toBeInTheDocument()
   })
 
@@ -116,13 +116,14 @@ describe("CircleDetail — payout section", () => {
     renderDetail()
 
     await waitFor(() => {
-      expect(screen.getByText(/Payout Status/i)).toBeInTheDocument()
+      expect(screen.getByText(/Sent to bank/i)).toBeInTheDocument()
     })
-    expect(screen.getByText("SUCCESS")).toBeInTheDocument()
+    // Cycle status is surfaced with a friendly label.
+    expect(screen.getByText("Paid out")).toBeInTheDocument()
     // Recipient is user-2 (not the current user) → not shown as "You"
     expect(screen.queryByText("You")).not.toBeInTheDocument()
     // No trigger button when not READY_TO_PAYOUT
-    expect(screen.queryByRole("button", { name: /Trigger Payout/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Send payout/i })).not.toBeInTheDocument()
   })
 
   it("surfaces the failure reason on a failed payout", async () => {
@@ -140,8 +141,8 @@ describe("CircleDetail — payout section", () => {
     renderDetail()
 
     await waitFor(() => {
-      expect(screen.getByText("FAILED")).toBeInTheDocument()
+      expect(screen.getByText(/Payout failed/i)).toBeInTheDocument()
     })
-    expect(screen.getByText("Insufficient balance")).toBeInTheDocument()
+    expect(screen.getByText(/Insufficient balance/i)).toBeInTheDocument()
   })
 })
