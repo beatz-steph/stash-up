@@ -81,6 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       status: "APPLIED",
       debitedMinor: res.debitedMinor,
       remainingDueMinor: res.remainingDueMinor,
+      otp: null,
     });
   }
 
@@ -126,6 +127,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             status: "CHARGING",
             debitedMinor: 0,
             remainingDueMinor: 0,
+            otp: null,
           });
         }
         if (v.status && !/pending|processing/i.test(v.status)) {
@@ -176,8 +178,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
   });
 
+  let charge;
   try {
-    await chargeTokenizedCard({
+    charge = await chargeTokenizedCard({
       orderReference,
       customerEmail: session.user.email,
       amountMinor: chargeMinor,
@@ -202,10 +205,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return apiError("Could not charge that card. Please try again.", 502);
   }
 
+  // 3DS/OTP-gated account: charge isn't settled — the member must enter the OTP
+  // Nomba sent. Keep the attempt PENDING; it settles once the OTP is submitted
+  // (POST /api/cards/otp) and the webhook lands.
+  if (charge.otpRequired) {
+    return apiSuccess<PayNowRes>({
+      method: "CARD",
+      status: "OTP_REQUIRED",
+      debitedMinor: 0,
+      remainingDueMinor: remainingDue,
+      otp: { orderReference, transactionId: charge.orderId ?? "" },
+    });
+  }
+
   return apiSuccess<PayNowRes>({
     method: "CARD",
     status: "CHARGING",
     debitedMinor: 0,
     remainingDueMinor: remainingDue,
+    otp: null,
   });
 }

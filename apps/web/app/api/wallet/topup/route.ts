@@ -85,8 +85,9 @@ export async function POST(req: Request) {
       },
     });
 
+    let charge;
     try {
-      await chargeTokenizedCard({
+      charge = await chargeTokenizedCard({
         orderReference,
         customerEmail: session.user.email,
         amountMinor: chargedMinor,
@@ -105,12 +106,27 @@ export async function POST(req: Request) {
       return apiError("Could not charge that card. Please try again.", 502);
     }
 
+    // 3DS/OTP-gated account: the charge isn't settled yet — the customer must
+    // enter the OTP Nomba just sent. Keep the attempt PENDING; it settles once
+    // the OTP is submitted (POST /api/cards/otp) and the webhook lands.
+    if (charge.otpRequired) {
+      return apiSuccess<WalletTopupRes>({
+        mode: "otp_required",
+        checkoutLink: null,
+        netMinor,
+        feeMinor,
+        chargedMinor,
+        otp: { orderReference, transactionId: charge.orderId ?? "" },
+      });
+    }
+
     return apiSuccess<WalletTopupRes>({
       mode: "charged",
       checkoutLink: null,
       netMinor,
       feeMinor,
       chargedMinor,
+      otp: null,
     });
   }
 
@@ -134,6 +150,7 @@ export async function POST(req: Request) {
       netMinor,
       feeMinor,
       chargedMinor,
+      otp: null,
     });
   } catch (err) {
     console.error(

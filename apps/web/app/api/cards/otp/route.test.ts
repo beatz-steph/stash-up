@@ -1,0 +1,85 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { POST } from "./route";
+import { prisma } from "@workspace/db";
+import { getSession } from "@/lib/session";
+import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
+import { submitCardOtp } from "@/lib/nomba-client";
+import { createMockSession } from "@test/mocks/auth";
+import { NextRequest } from "next/server";
+
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), requireSession: vi.fn() }));
+vi.mock("@/lib/nomba-config", () => ({ isNombaIntegrationDisabled: vi.fn() }));
+vi.mock("@/lib/nomba-client", () => ({ submitCardOtp: vi.fn() }));
+vi.mock("@workspace/db", () => ({
+  prisma: { chargeAttempt: { findUnique: vi.fn() } },
+}));
+
+function req(body: unknown) {
+  return new NextRequest("http://localhost/api/cards/otp", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+}
+const OK = { orderReference: "cardchg_x", transactionId: "ord-1", otp: "123456" };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+  vi.mocked(isNombaIntegrationDisabled).mockResolvedValue(false);
+  vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+    userId: "u1",
+    status: "PENDING",
+  } as never);
+  vi.mocked(submitCardOtp).mockResolvedValue({ status: true, message: "success" });
+});
+
+describe("POST /api/cards/otp", () => {
+  it("401 when unauthenticated", async () => {
+    vi.mocked(getSession).mockResolvedValue(null);
+    expect((await POST(req(OK))).status).toBe(401);
+  });
+
+  it("422 on a non-numeric OTP", async () => {
+    expect((await POST(req({ ...OK, otp: "abcd" }))).status).toBe(422);
+  });
+
+  it("404 when the orderReference isn't the caller's charge", async () => {
+    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+      userId: "someone-else",
+      status: "PENDING",
+    } as never);
+    expect((await POST(req(OK))).status).toBe(404);
+  });
+
+  it("409 when the charge isn't awaiting an OTP (not PENDING)", async () => {
+    vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "SUCCESS",
+    } as never);
+    expect((await POST(req(OK))).status).toBe(409);
+    expect(submitCardOtp).not.toHaveBeenCalled();
+  });
+
+  it("submits the OTP to Nomba and returns submitted", async () => {
+    const res = await POST(req(OK));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.submitted).toBe(true);
+    expect(submitCardOtp).toHaveBeenCalledWith({
+      otp: "123456",
+      orderReference: "cardchg_x",
+      transactionId: "ord-1",
+    });
+  });
+
+  it("400 when Nomba rejects the OTP (status false)", async () => {
+    vi.mocked(submitCardOtp).mockResolvedValue({ status: false, message: "Invalid OTP" });
+    expect((await POST(req(OK))).status).toBe(400);
+  });
+
+  it("502 when the Nomba call throws", async () => {
+    vi.mocked(submitCardOtp).mockRejectedValue(new Error("nomba down"));
+    expect((await POST(req(OK))).status).toBe(502);
+  });
+});

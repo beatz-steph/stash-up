@@ -41,7 +41,7 @@ describe("POST /api/circles/[id]/auto-debit", () => {
     } as never);
     vi.mocked(prisma.chargeAttempt.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.chargeAttempt.create).mockResolvedValue({ id: "att-1" } as never);
-    vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "ok" });
+    vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
   });
 
   it("returns 401 when unauthenticated", async () => {

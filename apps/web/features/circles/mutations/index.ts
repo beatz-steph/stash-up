@@ -192,6 +192,8 @@ export function usePayCircleNow(circleId: string) {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
       queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      // OTP_REQUIRED: the OTP dialog opens next — don't imply it's already done.
+      if (res.status === "OTP_REQUIRED") return
       toast.success(
         res.status === "APPLIED"
           ? "Paid from your wallet"

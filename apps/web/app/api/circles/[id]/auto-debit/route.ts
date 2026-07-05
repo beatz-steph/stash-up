@@ -141,7 +141,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         try {
-          await chargeTokenizedCard({
+          const charge = await chargeTokenizedCard({
             orderReference,
             customerEmail: session.user.email,
             amountMinor: chargeMinor,
@@ -154,7 +154,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
               attemptId: attempt.id,
             },
           });
-          chargeInitiated = true;
+          if (charge.otpRequired) {
+            // 3DS/OTP-gated: this bind-time auto-charge can't complete an OTP.
+            // Fail it (not left PENDING) so the member can pay via "Pay now",
+            // which drives the OTP step interactively.
+            await prisma.chargeAttempt.update({
+              where: { id: attempt.id },
+              data: { status: "FAILED", failureReason: "otp_required" },
+            });
+          } else {
+            chargeInitiated = true;
+          }
         } catch (err) {
           console.error(
             "[auto-debit] immediate charge failed (sweep will retry):",

@@ -38,6 +38,8 @@ export function useTopupWalletByCard() {
         return
       }
       queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      // otp_required: the dialog hands off to the OTP step — don't toast "charging".
+      if (res.mode === "otp_required") return
       toast.success("Charging your card — your balance updates once it's confirmed")
     },
     onError: (error) => {

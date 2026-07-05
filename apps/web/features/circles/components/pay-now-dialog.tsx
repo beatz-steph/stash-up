@@ -17,6 +17,7 @@ import { cardFeeOn } from "@/lib/fees"
 import { useWallet } from "@/features/wallet/queries"
 import { useCards } from "@/features/cards/queries"
 import { useEnrollCard } from "@/features/cards/mutations"
+import { CardOtpDialog, type CardOtpHandle } from "@/features/cards/components/card-otp-dialog"
 import { usePayCircleNow } from "../mutations"
 
 function cardLabel(cardType: string | null, last4: string | null): string {
@@ -39,6 +40,8 @@ export function PayNowDialog({
   const enroll = useEnrollCard()
   const payNow = usePayCircleNow(circleId)
   const [selectedCardId, setSelectedCardId] = useState("")
+  // 3DS/OTP-gated card charge: handle to finish it in CardOtpDialog.
+  const [otpHandle, setOtpHandle] = useState<CardOtpHandle | null>(null)
 
   const balanceMinor = wallet?.balanceMinor ?? 0
   const walletCovers = Math.min(balanceMinor, amountDueMinor)
@@ -58,11 +61,18 @@ export function PayNowDialog({
     if (!effectiveCardId) return
     payNow.mutate(
       { method: "CARD", savedCardId: effectiveCardId },
-      { onSuccess: () => setOpen(false) }
+      {
+        onSuccess: (res) => {
+          setOpen(false)
+          // 3DS-gated: hand off to the OTP step to complete the charge.
+          if (res.status === "OTP_REQUIRED" && res.otp) setOtpHandle(res.otp)
+        },
+      }
     )
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="rounded-su-pill">Pay now</Button>
@@ -177,5 +187,8 @@ export function PayNowDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    <CardOtpDialog handle={otpHandle} onClose={() => setOtpHandle(null)} />
+    </>
   )
 }

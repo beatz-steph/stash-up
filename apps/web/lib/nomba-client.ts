@@ -508,14 +508,32 @@ export async function createCheckoutOrder(params: {
 const TokenizedChargeResponseSchema = z.object({
   status: z.boolean(),
   message: z.string().optional().default(""),
+  // Present on accounts where the charge is 3DS/OTP-gated: the customer is asked
+  // to enter an OTP, and orderId is the transaction handle needed to submit it.
+  orderId: z.string().nullish(),
+  orderReference: z.string().nullish(),
 });
+
+export interface TokenizedChargeResult {
+  /** Nomba's `data.status` — true when the charge was accepted OR an OTP sent. */
+  status: boolean;
+  message: string;
+  /** True when the account runs the tokenized charge through a 3DS/OTP step:
+   *  the charge is NOT settled and needs `submitCardOtp` to complete. */
+  otpRequired: boolean;
+  /** Transaction handle to pass to `submitCardOtp` as `transactionId`. */
+  orderId: string | null;
+  orderReference: string;
+}
 
 /**
  * Charge a previously-tokenized card. Sends `X-Idempotent-key: <orderReference>`
  * so a network-dropped call can be retried without double-charging. The sync
- * response is only `{ status, message }` (no transaction id) — treat it as
- * "accepted", NOT settled; settlement truth comes from the webhook / verify
- * backstop. NEVER log `tokenKey` (or any PAN data).
+ * response is `{ status, message }` — but on 3DS/OTP-gated accounts a `true`
+ * status only means "OTP sent", NOT settled (message asks the customer to enter
+ * an OTP). Callers must branch on `otpRequired` and drive `submitCardOtp`.
+ * Settlement truth still comes from the webhook / verify backstop.
+ * NEVER log `tokenKey` (or any PAN data).
  */
 export async function chargeTokenizedCard(params: {
   orderReference: string;
@@ -554,7 +572,59 @@ export async function chargeTokenizedCard(params: {
       }`
     );
   }
-  return parsed.data; // { status, message } — accepted, awaiting settlement
+  const message = parsed.data.message;
+  // 3DS/OTP-gated accounts return status:true with a "enter the OTP" message and
+  // an orderId to complete against. Detect it so callers drive the OTP step
+  // instead of pretending the charge is already settling.
+  const otpRequired = /\botp\b/i.test(message);
+  return {
+    status: parsed.data.status,
+    message,
+    otpRequired,
+    orderId: parsed.data.orderId ?? null,
+    orderReference: parsed.data.orderReference ?? params.orderReference,
+  } satisfies TokenizedChargeResult;
+}
+
+const SubmitOtpResponseSchema = z.object({
+  status: z.boolean(),
+  message: z.string().optional().default(""),
+});
+
+/**
+ * Complete a 3DS/OTP-gated tokenized charge by submitting the OTP the customer
+ * received. `transactionId` is the `orderId` returned by `chargeTokenizedCard`.
+ * On success Nomba finishes the charge and fires the settlement webhook, which
+ * our existing handlers apply. NEVER log the OTP.
+ */
+export async function submitCardOtp(params: {
+  otp: string;
+  orderReference: string;
+  transactionId: string;
+}): Promise<{ status: boolean; message: string }> {
+  const res = await nombaFetch("/v1/checkout/checkout-card-otp", {
+    method: "POST",
+    body: JSON.stringify({
+      otp: params.otp,
+      orderReference: params.orderReference,
+      transactionId: params.transactionId,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Submit card OTP failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = SubmitOtpResponseSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Submit card OTP: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+  return parsed.data;
 }
 
 const RefundResponseSchema = z.object({

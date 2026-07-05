@@ -19,6 +19,7 @@ import { cardFeeOn } from "@/lib/fees"
 import { useWallet } from "../queries"
 import { useProvisionWalletAccount, useTopupWalletByCard } from "../mutations"
 import { useCards } from "@/features/cards/queries"
+import { CardOtpDialog, type CardOtpHandle } from "@/features/cards/components/card-otp-dialog"
 
 /** Top up the wallet — by card (hosted checkout) or bank transfer to the
  * user's dedicated virtual account. Lives behind a single "Top up" action so
@@ -31,6 +32,8 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
   const topupByCard = useTopupWalletByCard()
   const [cardAmount, setCardAmount] = useState("")
   const [selectedCardId, setSelectedCardId] = useState("") // "" = default, "new" = new card
+  // 3DS/OTP-gated saved-card charge: the handle to finish it in CardOtpDialog.
+  const [otpHandle, setOtpHandle] = useState<CardOtpHandle | null>(null)
 
   const va = wallet?.virtualAccount ?? null
   const cardNaira = Number(cardAmount)
@@ -59,6 +62,10 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
           if (res.mode === "charged") {
             setOpen(false)
             setCardAmount("")
+          } else if (res.mode === "otp_required" && res.otp) {
+            // 3DS-gated: hand off to the OTP step to finish the charge.
+            setOpen(false)
+            setOtpHandle(res.otp)
           }
         },
       }
@@ -66,6 +73,7 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
@@ -231,5 +239,12 @@ export function TopUpDialog({ trigger }: { trigger?: React.ReactNode }) {
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    <CardOtpDialog
+      handle={otpHandle}
+      onClose={() => setOtpHandle(null)}
+      onCompleted={() => setCardAmount("")}
+    />
+    </>
   )
 }

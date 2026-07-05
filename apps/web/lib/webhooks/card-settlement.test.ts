@@ -41,7 +41,7 @@ function verifyPayload(over: Partial<Record<string, unknown>> = {}): NombaWebhoo
     event_type: "payment_success",
     requestId: "evt1",
     data: {
-      tokenizedCardData: { tokenKey: "TK123", cardType: "Verve" },
+      tokenizedCardData: { tokenKey: "TK1230000", cardType: "Verve" },
       transaction: {
         type: "online_checkout",
         transactionId: "TX1",
@@ -65,7 +65,7 @@ function enrollPayload(kind: "cardenroll" | "cardchg"): NombaWebhookPayload {
     event_type: "payment_success",
     requestId: "evt1",
     data: {
-      tokenizedCardData: { tokenKey: "TK999", cardType: "Visa" },
+      tokenizedCardData: { tokenKey: "TK9990000", cardType: "Visa" },
       transaction: {
         type: "online_checkout",
         transactionId: "TX9",
@@ -126,7 +126,7 @@ describe("handleCardSettlement — verification", () => {
     await handleCardSettlement(receipt, verifyPayload());
 
     expect(tx.savedCard.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ userId: "u1", tokenKey: "TK123", last4: "5417" }) })
+      expect.objectContaining({ data: expect.objectContaining({ userId: "u1", tokenKey: "TK1230000", last4: "5417" }) })
     );
     expect(tx.membership.update).toHaveBeenCalledWith({
       where: { id: "m1" },

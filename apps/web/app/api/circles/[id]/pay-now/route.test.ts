@@ -104,7 +104,7 @@ describe("POST /api/circles/[id]/pay-now", () => {
 
   describe("CARD", () => {
     it("charges the saved card grossed-up for the remaining due", async () => {
-      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: "success" } as never);
+      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
       const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
       expect(res.status).toBe(200);
       const { data } = await res.json();
@@ -115,6 +115,24 @@ describe("POST /api/circles/[id]/pay-now", () => {
       expect(chargeArg.amountMinor).toBe(405_680); // ceil(400000 / (1 − 0.014))
       expect(chargeArg.metadata).toMatchObject({ kind: "cardchg", cycleId: "cyc1", membershipId: "m1" });
       expect(collectFromWallet).not.toHaveBeenCalled();
+    });
+
+    it("returns OTP_REQUIRED (with a handle) when the charge is 3DS-gated", async () => {
+      vi.mocked(chargeTokenizedCard).mockResolvedValue({
+        status: true,
+        message: "Kindly enter the OTP sent to 0916*****15",
+        otpRequired: true,
+        orderId: "ord-123",
+        orderReference: "cardchg_x",
+      });
+      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      expect(res.status).toBe(200);
+      const { data } = await res.json();
+      expect(data.status).toBe("OTP_REQUIRED");
+      expect(data.otp).toMatchObject({ transactionId: "ord-123" });
+      expect(data.otp.orderReference).toMatch(/^cardchg_/);
+      // The attempt stays PENDING (not FAILED) — it completes after OTP submit.
+      expect(prisma.chargeAttempt.update).not.toHaveBeenCalled();
     });
 
     it("409 + retires a placeholder-token card (never truly tokenized)", async () => {
@@ -171,7 +189,7 @@ describe("POST /api/circles/[id]/pay-now", () => {
       vi.mocked(verifyCheckoutTransaction).mockResolvedValue({
         settled: false, status: "FAILED", transactionId: null, feeMinor: null, amountMinor: null,
       });
-      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: "success" } as never);
+      vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
       const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
       expect(res.status).toBe(200);
       expect(prisma.chargeAttempt.update).toHaveBeenCalledWith(

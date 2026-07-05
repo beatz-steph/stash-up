@@ -39,14 +39,24 @@ export const WalletTopupReqSchema = z.object({
 });
 export type WalletTopupReq = z.infer<typeof WalletTopupReqSchema>;
 
+/** Handle for completing a 3DS/OTP-gated card charge via POST /api/cards/otp. */
+export const CardOtpHandleSchema = z.object({
+  orderReference: z.string(),
+  transactionId: z.string(),
+});
+export type CardOtpHandle = z.infer<typeof CardOtpHandleSchema>;
+
 export const WalletTopupResSchema = z.object({
-  // "checkout" → redirect the user to checkoutLink (new card).
-  // "charged"  → the saved card is being charged; balance updates on settlement.
-  mode: z.enum(["checkout", "charged"]),
+  // "checkout"     → redirect the user to checkoutLink (new card).
+  // "charged"      → the saved card is being charged; balance updates on settlement.
+  // "otp_required" → the saved-card charge is 3DS-gated; collect the OTP (see `otp`).
+  mode: z.enum(["checkout", "charged", "otp_required"]),
   checkoutLink: z.string().nullable(),
   netMinor: z.number().int(), // credited to the wallet
   feeMinor: z.number().int(), // card fee added on top
   chargedMinor: z.number().int(), // net + fee — what the card is charged
+  // Present only when mode is "otp_required".
+  otp: CardOtpHandleSchema.nullable().default(null),
 });
 export type WalletTopupRes = z.infer<typeof WalletTopupResSchema>;
 

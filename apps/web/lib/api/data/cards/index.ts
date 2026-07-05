@@ -8,6 +8,7 @@ import type {
   ToggleWalletAutoDebitReq,
   ToggleWalletAutoDebitRes,
 } from "@/app/api/cards/dto/cards.dto";
+import type { CardOtpReq, CardOtpRes } from "@/app/api/cards/otp/dto/card-otp.dto";
 
 /** The requesting user's saved cards (excludes revoked). */
 export function fetchCards(options?: ApiOptions) {
@@ -47,4 +48,9 @@ export function toggleWalletAutoDebit(
     body,
     options
   );
+}
+
+/** Complete a 3DS/OTP-gated tokenized card charge by submitting the OTP. */
+export function submitCardOtp(body: CardOtpReq, options?: ApiOptions) {
+  return api.post<CardOtpRes>("/api/cards/otp", body, options);
 }

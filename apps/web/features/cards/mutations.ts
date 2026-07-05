@@ -6,10 +6,13 @@ import {
   linkAutoDebit,
   unlinkAutoDebit,
   toggleWalletAutoDebit,
+  submitCardOtp,
 } from "@/lib/api/data/cards"
 import type { EnrollCardReq, LinkAutoDebitReq } from "@/app/api/cards/dto/cards.dto"
+import type { CardOtpReq } from "@/app/api/cards/otp/dto/card-otp.dto"
 import { CARD_QUERY_KEYS } from "./queries"
 import { CIRCLE_QUERY_KEYS } from "../circles/queries"
+import { WALLET_QUERY_KEYS } from "../wallet/queries"
 
 /**
  * Start a tokenizing checkout to add a new card, then redirect the browser to
@@ -74,6 +77,24 @@ export function useUnlinkAutoDebit(circleId: string) {
     onError: (error) => {
       toast.error(error.message || "Could not turn off auto-save")
     },
+  })
+}
+
+/**
+ * Submit the OTP for a 3DS-gated tokenized card charge (pay-now / saved-card
+ * top-up). On success Nomba completes the charge and the settlement webhook
+ * credits the wallet / applies the contribution — so we refresh both.
+ */
+export function useSubmitCardOtp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CardOtpReq) => submitCardOtp(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.all })
+      toast.success("OTP confirmed — your payment is completing")
+    },
+    // Errors are surfaced inline in the OTP dialog, not toasted.
   })
 }
 

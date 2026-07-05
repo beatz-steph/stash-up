@@ -84,7 +84,7 @@ describe("POST /api/wallet/topup", () => {
       status: "ACTIVE",
       tokenKey: "TK_SECRET",
     } as never);
-    vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: "success" } as never);
+    vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
 
     const res = await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }));
     expect(res.status).toBe(200);
@@ -107,6 +107,30 @@ describe("POST /api/wallet/topup", () => {
       status: "PENDING",
       orderReference: chargeArg.orderReference,
     });
+  });
+
+  it("saved card: returns otp_required (with a handle) when the charge is 3DS-gated", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "ACTIVE",
+      tokenKey: "TK_SECRET",
+    } as never);
+    vi.mocked(chargeTokenizedCard).mockResolvedValue({
+      status: true,
+      message: "Kindly enter the OTP sent to your phone",
+      otpRequired: true,
+      orderId: "ord-999",
+      orderReference: "wallettopup_x",
+    });
+    const res = await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.mode).toBe("otp_required");
+    expect(data.otp).toMatchObject({ transactionId: "ord-999" });
+    expect(data.otp.orderReference).toMatch(/^wallettopup_/);
+    // Attempt stays PENDING — it settles after the OTP is submitted.
+    expect(prisma.chargeAttempt.update).not.toHaveBeenCalled();
   });
 
   it("saved card: 502 and marks the durable attempt FAILED when the charge throws", async () => {

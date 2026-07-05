@@ -70,7 +70,7 @@ beforeEach(() => {
   vi.mocked(prisma.membership.findMany).mockResolvedValue([] as never);
   routeFindMany({});
   vi.mocked(prisma.chargeAttempt.create).mockResolvedValue({ id: "att1" } as never);
-  vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "ok" });
+  vi.mocked(chargeTokenizedCard).mockResolvedValue({ status: true, message: "Approved", otpRequired: false, orderId: null, orderReference: "ref" });
   vi.mocked(collectFromWallet).mockResolvedValue({ debitedMinor: 0, remainingDueMinor: 0 });
 });
 

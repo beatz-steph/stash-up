@@ -163,7 +163,7 @@ export async function POST(request: Request) {
       });
 
       try {
-        await chargeTokenizedCard({
+        const charge = await chargeTokenizedCard({
           orderReference,
           customerEmail: m.user.email,
           amountMinor: chargeMinor,
@@ -176,7 +176,18 @@ export async function POST(request: Request) {
             attemptId: attempt.id,
           },
         });
-        summary.charged++;
+        if (charge.otpRequired) {
+          // 3DS/OTP-gated account: an unattended sweep can't complete an OTP.
+          // Fail the attempt (don't leave it PENDING); backoff caps the retries.
+          // Real fix is Nomba enabling non-3DS recurring/MIT charges.
+          await prisma.chargeAttempt.update({
+            where: { id: attempt.id },
+            data: { status: "FAILED", failureReason: "otp_required" },
+          });
+          summary.chargeFailed++;
+        } else {
+          summary.charged++;
+        }
       } catch (err) {
         console.error(
           `[card-sweep] charge failed membership=${m.id}:`,
