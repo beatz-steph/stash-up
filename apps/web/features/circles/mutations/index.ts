@@ -12,10 +12,13 @@ import {
   retryProvisioning,
   triggerPayout,
   renewCircle,
+  payCircleNow,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
+import type { PayNowReq } from "@/app/api/circles/[id]/pay-now/dto/pay-now.dto"
 import { CIRCLE_QUERY_KEYS } from "../queries"
+import { WALLET_QUERY_KEYS } from "@/features/wallet/queries"
 
 export function useActivateCircle(circleId: string) {
   const queryClient = useQueryClient()
@@ -174,6 +177,27 @@ export function useRenewCircle(circleId: string) {
     },
     onError: (error) => {
       toast.error(error.message || "Failed to renew circle")
+    },
+  })
+}
+
+/** Pay the current cycle's due amount now — from wallet (instant) or card
+ * (settles shortly via webhook). Refreshes the circle + wallet. */
+export function usePayCircleNow(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: PayNowReq) => payCircleNow(circleId, body),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      toast.success(
+        res.status === "APPLIED"
+          ? "Paid from your wallet"
+          : "Charging your card — your contribution updates once it's confirmed"
+      )
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not complete the payment")
     },
   })
 }

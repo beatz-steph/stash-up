@@ -4,6 +4,7 @@ import { useCircleDetail, useVirtualAccount } from "../queries"
 import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { CycleHistory } from "./cycle-history"
+import { PayNowDialog } from "./pay-now-dialog"
 import { AutoSaveBlock } from "@/features/cards/components/auto-save-block"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
@@ -329,19 +330,25 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                   </div>
                 </div>
               ) : (
-                <div>
-                  <p className="font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
-                    {formatNaira(myAmountDueMinor)}
-                  </p>
-                  <p className="mt-0.5 font-su-sans text-su-caption text-su-muted">
-                    left to pay · due {shortDate(currentCycle.deadline)}
-                    {myContributionMinor > 0 && (
-                      <> · you&apos;ve sent {formatNaira(myContributionMinor)} so far</>
-                    )}
-                  </p>
-                  <p className="mt-2 font-su-sans text-su-caption text-su-muted">
-                    Pay via <span className="font-semibold text-su-ink">How you pay</span> below.
-                  </p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
+                      {formatNaira(myAmountDueMinor)}
+                    </p>
+                    <p className="mt-0.5 font-su-sans text-su-caption text-su-muted">
+                      left to pay · due {shortDate(currentCycle.deadline)}
+                      {myContributionMinor > 0 && (
+                        <> · you&apos;ve sent {formatNaira(myContributionMinor)} so far</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <PayNowDialog circleId={circle.id} amountDueMinor={myAmountDueMinor} />
+                    <span className="font-su-sans text-su-caption text-su-muted">
+                      or transfer / auto-save under{" "}
+                      <span className="font-semibold text-su-ink">How you pay</span>
+                    </span>
+                  </div>
                 </div>
               )}
 

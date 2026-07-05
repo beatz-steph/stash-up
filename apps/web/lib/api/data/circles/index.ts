@@ -9,6 +9,7 @@ import type {
   CreateCircleRes,
   CreateInviteRes,
 } from "@/app/api/circles/dto/circles.dto"
+import type { PayNowReq, PayNowRes } from "@/app/api/circles/[id]/pay-now/dto/pay-now.dto"
 
 export type CreateCircleInput = z.infer<typeof CreateCircleReqSchema>
 export type InviteInput = z.infer<typeof InviteReqSchema>
@@ -75,4 +76,9 @@ export function triggerPayout(id: string, cycleId: string, options?: ApiOptions)
 
 export function renewCircle(id: string, options?: ApiOptions) {
   return api.post<{ cycleId: string; sequence: number }>(`/api/circles/${id}/renew`, undefined, options)
+}
+
+/** Pay the current cycle's amount due on demand — from wallet or a saved card. */
+export function payCircleNow(id: string, body: PayNowReq, options?: ApiOptions) {
+  return api.post<PayNowRes>(`/api/circles/${id}/pay-now`, body, options)
 }
