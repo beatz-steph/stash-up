@@ -52,7 +52,32 @@ To access the Admin dashboard, you need a `SUPER_ADMIN` account.
    or `npx tsx apps/admin/scripts/seed.ts`
 3. This will create a default super admin (or you can specify credentials in the script).
 
-## 5. Post-Deploy Smoke Test
+## 5. Scheduled Jobs (Railway cron functions)
+
+Cron triggers run as **Railway cloud functions**, not Vercel crons (`vercel.json`
+crons were intentionally removed). Each just POSTs the endpoint with the
+`CRON_SECRET` bearer. Create one Railway function per job:
+
+| Endpoint | Suggested schedule | Purpose |
+|----------|-------------------|---------|
+| `/api/cron/payout-sweep` | every ~5 min | Initiate payouts for `READY_TO_PAYOUT` cycles |
+| `/api/cron/cycle-sweep` | hourly | Close/advance cycles past deadline |
+| `/api/cron/card-debit-sweep` | hourly | Collect auto-save contributions (wallet → card) |
+| `/api/cron/orphan-spool` | every ~6 h | Spool VA credits with no webhook into the recon queue |
+| `/api/cron/webhook-replay` | every ~1 h | Ask Nomba to re-push failed/uncertain webhooks (recovery backstop) |
+
+```bash
+curl -X POST https://www.stashup.xyz/api/cron/webhook-replay \
+  -H "authorization: Bearer $CRON_SECRET"
+```
+
+`webhook-replay` asks Nomba to redeliver any `PAYMENT_*` / `PAYOUT_*` event whose
+delivery to us failed or is uncertain in the last 6 h (override with `?hours=`).
+Nomba re-sends them correctly signed; our WebhookReceipt/business idempotency
+makes duplicate deliveries safe, so it's safe to run frequently. It self-heals:
+once an event is delivered it leaves the replay filter and stops being re-pushed.
+
+## 6. Post-Deploy Smoke Test
 1. Access the web app, register an account, and confirm email sending (if configured).
 2. Access the admin app, log in with the seeded `SUPER_ADMIN` credentials.
 3. Verify Redis connection by triggering a webhook and checking the deduplication logs (ensure it doesn't fall back to DB).

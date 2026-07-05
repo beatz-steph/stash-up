@@ -651,3 +651,39 @@ export async function verifyCheckoutTransaction(orderReference: string): Promise
     transactionId: parsed.data.transactionId ?? parsed.data.id ?? null,
   };
 }
+
+/**
+ * Ask Nomba to re-push webhook events whose delivery to us failed or is
+ * uncertain within a window. Nomba re-sends them — correctly signed — to our
+ * registered webhook URL; our WebhookReceipt/business idempotency makes any
+ * duplicate deliveries safe. This is the recovery backstop for missed webhooks
+ * (e.g. our endpoint was briefly unreachable).
+ *
+ * `statuses` should stay to INITIATED / FAILED / INCONCLUSIVE — replaying
+ * PUSHED would re-deliver already-successful events on every run. `eventTypes`
+ * uses Nomba's UPPER_CASE filter names (the re-pushed webhook still arrives
+ * with its lower-case `event_type`, which dispatch already handles). The
+ * response is a fire-and-forget acknowledgement; Nomba re-delivers async.
+ */
+export async function replayWebhooks(params: {
+  startDate: string; // ISO 8601
+  endDate: string; // ISO 8601
+  statuses: string[];
+  eventTypes: string[];
+}): Promise<{ description: string }> {
+  const res = await nombaFetch("/v1/webhooks/replay", {
+    method: "POST",
+    body: JSON.stringify({
+      startDate: params.startDate,
+      endDate: params.endDate,
+      filter: { statuses: params.statuses, eventTypes: params.eventTypes },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Webhook replay failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return { description: typeof data?.description === "string" ? data.description : "" };
+}
