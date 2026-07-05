@@ -147,6 +147,15 @@ describe("handleWalletCardTopup", () => {
     expect(tx.savedCard.create).not.toHaveBeenCalled();
   });
 
+  it("does NOT save a placeholder-token card ('N/A') but still credits the wallet", async () => {
+    const p = payload(10_000, 140);
+    p.data!.tokenizedCardData = { tokenKey: "N/A", cardType: "Verve" };
+    await handleWalletCardTopup(receipt, p);
+    expect(tx.savedCard.findFirst).not.toHaveBeenCalled();
+    expect(tx.savedCard.create).not.toHaveBeenCalled();
+    expect(creditWallet).toHaveBeenCalled();
+  });
+
   it("keys on the durable attempt and marks it SUCCESS for a saved-card top-up", async () => {
     vi.mocked(prisma.chargeAttempt.findUnique).mockResolvedValue({ id: "att9", status: "PENDING" } as never);
     await handleWalletCardTopup(receipt, payload(10_000, 140));

@@ -19,7 +19,7 @@ vi.mock("@workspace/db", () => ({
     membership: { findUnique: vi.fn() },
     circle: { findUnique: vi.fn() },
     cycle: { findUnique: vi.fn() },
-    savedCard: { findUnique: vi.fn() },
+    savedCard: { findUnique: vi.fn(), update: vi.fn() },
     chargeAttempt: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
 }));
@@ -115,6 +115,18 @@ describe("POST /api/circles/[id]/pay-now", () => {
       expect(chargeArg.amountMinor).toBe(405_680); // ceil(400000 / (1 − 0.014))
       expect(chargeArg.metadata).toMatchObject({ kind: "cardchg", cycleId: "cyc1", membershipId: "m1" });
       expect(collectFromWallet).not.toHaveBeenCalled();
+    });
+
+    it("409 + retires a placeholder-token card (never truly tokenized)", async () => {
+      vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+        id: "card1", userId: "u1", status: "ACTIVE", tokenKey: "N/A",
+      } as never);
+      const res = await POST(req({ method: "CARD", savedCardId: "card1" }), params);
+      expect(res.status).toBe(409);
+      expect(chargeTokenizedCard).not.toHaveBeenCalled();
+      expect(prisma.savedCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "card1" }, data: { status: "EXPIRED" } })
+      );
     });
 
     it("404 when the card isn't the user's", async () => {

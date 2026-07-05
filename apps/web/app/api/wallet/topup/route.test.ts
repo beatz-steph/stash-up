@@ -15,7 +15,7 @@ vi.mock("@/lib/nomba-client", () => ({
 }));
 vi.mock("@workspace/db", () => ({
   prisma: {
-    savedCard: { findUnique: vi.fn() },
+    savedCard: { findUnique: vi.fn(), update: vi.fn() },
     chargeAttempt: { create: vi.fn(), update: vi.fn() },
   },
 }));
@@ -133,6 +133,21 @@ describe("POST /api/wallet/topup", () => {
       tokenKey: "TK",
     } as never);
     expect((await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }))).status).toBe(404);
+  });
+
+  it("saved card: 409 + retires a placeholder-token card (never truly tokenized)", async () => {
+    vi.mocked(getSession).mockResolvedValue(createMockSession({ id: "u1" }));
+    vi.mocked(prisma.savedCard.findUnique).mockResolvedValue({
+      userId: "u1",
+      status: "ACTIVE",
+      tokenKey: "N/A",
+    } as never);
+    const res = await POST(req({ amountMinor: 1_000_000, savedCardId: "card1" }));
+    expect(res.status).toBe(409);
+    expect(chargeTokenizedCard).not.toHaveBeenCalled();
+    expect(prisma.savedCard.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "card1" }, data: { status: "EXPIRED" } })
+    );
   });
 
   it("saved card: 409 when the card is not ACTIVE", async () => {

@@ -5,7 +5,7 @@ import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 import { prisma } from "@workspace/db";
 import { createCheckoutOrder, chargeTokenizedCard } from "@/lib/nomba-client";
 import { grossUpForCardFee, cardFeeOn } from "@/lib/fees";
-import { walletTopupCallbackUrl, orderNonce } from "@/lib/cards/enrollment";
+import { walletTopupCallbackUrl, orderNonce, isUsableCardToken } from "@/lib/cards/enrollment";
 import { WalletTopupReqSchema, type WalletTopupRes } from "../dto/wallet.dto";
 
 /**
@@ -62,6 +62,13 @@ export async function POST(req: Request) {
     }
     if (card.status !== "ACTIVE") {
       return apiError("That card is no longer usable. Add a new card.", 409);
+    }
+    // A placeholder token (Nomba returned "N/A" — the card was never really
+    // tokenized) can't be charged offline: it would OTP-prompt and never debit.
+    // Retire it so it stops being offered, and ask the user to re-add the card.
+    if (!isUsableCardToken(card.tokenKey)) {
+      await prisma.savedCard.update({ where: { id: savedCardId }, data: { status: "EXPIRED" } });
+      return apiError("That saved card can't be charged automatically. Please add it again.", 409);
     }
 
     // Durable record BEFORE the charge — this is what lets the verify sweep

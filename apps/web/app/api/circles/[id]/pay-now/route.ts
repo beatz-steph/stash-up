@@ -12,6 +12,7 @@ import {
   shouldCollectNow,
   chargeOrderRef,
   orderNonce,
+  isUsableCardToken,
 } from "@/lib/cards/enrollment";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 import { PayNowReqSchema, type PayNowRes } from "./dto/pay-now.dto";
@@ -94,6 +95,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
   if (!card || card.userId !== userId) return apiError("Card not found", 404);
   if (card.status !== "ACTIVE") return apiError("That card is no longer usable. Add a new card.", 409);
+  // Placeholder token (Nomba returned "N/A" — never truly tokenized) can't be
+  // charged offline; retire it and tell the user to re-add the card.
+  if (!isUsableCardToken(card.tokenKey)) {
+    await prisma.savedCard.update({ where: { id: card.id }, data: { status: "EXPIRED" } });
+    return apiError("That saved card can't be charged automatically. Please add it again.", 409);
+  }
 
   // Never double-charge while an attempt is already in flight for this cycle —
   // but don't dead-end on a stuck one either. If a PENDING card attempt exists,

@@ -7,6 +7,7 @@ import { creditWallet } from "@/lib/wallet/ledger";
 import { handleWalletCardTopup } from "./wallet-topup";
 import { createNotification } from "@/lib/notifications";
 import { CARD_FEE_RATE } from "@/lib/fees";
+import { isUsableCardToken } from "@/lib/cards/enrollment";
 
 type CardKind = "cardenroll" | "cardverify" | "cardchg";
 
@@ -141,14 +142,15 @@ async function settleVerification(
   // ₦50 verification hold is returned as wallet store-credit instead (disclosed
   // to the customer). Everything happens in one tx — card save, mark SUCCESS,
   // and the wallet credit — so it's atomic and needs no external call.
+  const tokenized = isUsableCardToken(card.tokenKey);
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     let savedCardId: string | null = null;
-    if (card.tokenKey) {
+    if (tokenized) {
       const saved = await tx.savedCard.create({
         data: {
           userId: attempt.userId,
           provider: "NOMBA",
-          tokenKey: card.tokenKey,
+          tokenKey: card.tokenKey!,
           last4: card.last4,
           cardType: card.cardType,
           status: "ACTIVE",
@@ -194,8 +196,10 @@ async function settleVerification(
   await createNotification({
     userId: attempt.userId,
     type: "GENERIC",
-    title: "Card added",
-    body: "Your card was saved. The ₦50 verification charge was added to your StashUp wallet.",
+    title: tokenized ? "Card added" : "Card couldn't be saved",
+    body: tokenized
+      ? "Your card was saved. The ₦50 verification charge was added to your StashUp wallet."
+      : "We couldn't save this card for future payments (your bank didn't return a reusable token). The ₦50 was added to your StashUp wallet. Please try adding the card again.",
   });
 }
 
@@ -285,7 +289,7 @@ export async function settleContribution(
 
     // Create + bind the SavedCard for enrollment settlements.
     let savedCardId: string | null = attempt.savedCardId;
-    if (kind === "cardenroll" && data.tokenKey) {
+    if (kind === "cardenroll" && isUsableCardToken(data.tokenKey)) {
       const saved = await tx.savedCard.create({
         data: {
           userId: attempt.userId,

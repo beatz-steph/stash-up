@@ -11,6 +11,22 @@ import { randomUUID } from "node:crypto";
  * contribution to collect. Never applied to any pot/contribution/buffer. */
 export const VERIFICATION_AMOUNT_MINOR = 5000;
 
+/**
+ * A usable Nomba card token. When tokenization doesn't actually happen (card/
+ * rail unsupported, checkout not completed as a tokenizing payment, sandbox),
+ * Nomba still fires `payment_success` but with a PLACEHOLDER `tokenKey` like
+ * `"N/A"`. Saving/charging that placeholder is what produces "success" with no
+ * debit + an OTP email — a placeholder is not a real merchant-initiated token.
+ * Reject those so we never persist or charge a card that can't actually be
+ * charged offline.
+ */
+export function isUsableCardToken(tokenKey: string | null | undefined): tokenKey is string {
+  if (!tokenKey) return false;
+  const t = tokenKey.trim();
+  if (t.length < 6) return false;
+  return !["n/a", "null", "nil", "none", "undefined", "-"].includes(t.toLowerCase());
+}
+
 /** Max charge attempts per (cycle, membership) before we stop retrying. */
 export const MAX_ATTEMPTS = 3;
 

@@ -5,6 +5,7 @@ import { creditWallet } from "@/lib/wallet/ledger";
 import { createNotification } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
 import { CARD_FEE_RATE } from "@/lib/fees";
+import { isUsableCardToken } from "@/lib/cards/enrollment";
 
 /**
  * Bank-transfer top-up: a `payment_success` on a `kind: WALLET` virtual
@@ -215,11 +216,11 @@ export async function handleWalletCardTopup(
     currency: order?.currency || "NGN",
     receivedAt: new Date(transaction?.time || Date.now()),
     attemptId: attempt?.id ?? null,
-    saveCard: tokenized?.tokenKey
+    saveCard: isUsableCardToken(tokenized?.tokenKey)
       ? {
-          tokenKey: tokenized.tokenKey,
+          tokenKey: tokenized!.tokenKey!,
           last4: order?.cardLast4Digits ?? null,
-          cardType: tokenized.cardType ?? order?.cardType ?? null,
+          cardType: tokenized!.cardType ?? order?.cardType ?? null,
         }
       : null,
   });

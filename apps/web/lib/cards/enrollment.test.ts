@@ -10,6 +10,7 @@ import {
   orderNonce,
   retryBackoffHours,
   computeNextAttempt,
+  isUsableCardToken,
   type PriorAttempt,
 } from "./enrollment";
 
@@ -125,5 +126,24 @@ describe("computeNextAttempt", () => {
     const res = computeNextAttempt(priors, now);
     expect(res.eligible).toBe(false);
     expect(res.attemptNumber).toBe(4);
+  });
+});
+
+describe("isUsableCardToken", () => {
+  it("accepts a real Nomba token", () => {
+    expect(isUsableCardToken("7628788443")).toBe(true);
+    expect(isUsableCardToken("798a1b2c3d4e")).toBe(true);
+  });
+
+  it("rejects Nomba's placeholder tokens (the 'N/A' bug)", () => {
+    for (const t of ["N/A", "n/a", "null", "NULL", "nil", "none", "-", "", "  "]) {
+      expect(isUsableCardToken(t)).toBe(false);
+    }
+  });
+
+  it("rejects null/undefined and too-short values", () => {
+    expect(isUsableCardToken(null)).toBe(false);
+    expect(isUsableCardToken(undefined)).toBe(false);
+    expect(isUsableCardToken("12345")).toBe(false); // < 6 chars
   });
 });
