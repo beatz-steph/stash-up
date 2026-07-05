@@ -9,6 +9,11 @@ import {
   handleCardFailure,
 } from "./card-settlement";
 import { handleWalletBankTopup } from "./wallet-topup";
+import {
+  isWalletWithdrawalRef,
+  handleWalletWithdrawalSuccess,
+  handleWalletWithdrawalFailed,
+} from "./wallet-withdrawal";
 import { advanceRotation } from "../payout/rotation";
 import { createNotification } from "@/lib/notifications";
 import { formatNaira } from "@/lib/money";
@@ -180,6 +185,13 @@ export async function dispatchWebhookEvent(
       const ref = payload.data?.transaction?.merchantTxRef;
       if (!ref) throw new Error("payout_success missing merchantTxRef");
 
+      // Wallet withdrawals settle here too — resolve them before the circle
+      // Payout path (which assumes a payout_<cycleId> ref).
+      if (isWalletWithdrawalRef(ref)) {
+        await handleWalletWithdrawalSuccess(ref, payload.data?.transaction?.transactionId);
+        break;
+      }
+
       let payoutRecipientId: string | null = null;
       let amountMinor = 0;
       let payoutCircleName = "";
@@ -247,6 +259,12 @@ export async function dispatchWebhookEvent(
       if (!ref) throw new Error("payout_failed missing merchantTxRef");
 
       const reason = payload.data?.transaction?.responseCode || payload.data?.transaction?.narration || "Unknown failure";
+
+      // Wallet withdrawal failed → reverse the debit back to the wallet.
+      if (isWalletWithdrawalRef(ref)) {
+        await handleWalletWithdrawalFailed(ref, reason);
+        break;
+      }
 
       let payoutRecipientId: string | null = null;
       let amountMinor = 0;

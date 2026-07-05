@@ -13,6 +13,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Scale,
+  Wallet,
 } from "lucide-react"
 
 function naira(minor: number): string {
@@ -133,6 +134,13 @@ export default async function DashboardPage() {
       hint: "Money in minus money out",
       icon: Scale,
       color: "text-su-ink",
+    },
+    {
+      label: "Wallet liabilities",
+      value: naira(metrics.wallet.liabilitiesMinor),
+      hint: `Held across ${metrics.wallet.accounts.toLocaleString()} wallets`,
+      icon: Wallet,
+      color: "text-su-primary",
     },
   ]
 

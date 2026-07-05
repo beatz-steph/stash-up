@@ -31,6 +31,10 @@ export const metricsResponseSchema = z.object({
     inbound: z.object({ count: z.number(), valueMinor: z.number() }),
     outbound: z.object({ count: z.number(), valueMinor: z.number() }),
   }),
+  wallet: z.object({
+    accounts: z.number(),
+    liabilitiesMinor: z.number(),
+  }),
 })
 
 export type MetricsResponseDto = z.infer<typeof metricsResponseSchema>

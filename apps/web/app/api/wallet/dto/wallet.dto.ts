@@ -43,3 +43,19 @@ export const WalletTopupResSchema = z.object({
   chargedMinor: z.number().int(), // net + fee — what the card is charged
 });
 export type WalletTopupRes = z.infer<typeof WalletTopupResSchema>;
+
+/** POST /api/wallet/withdraw — pay out to the linked bank. amountMinor is what
+ * the user receives; the transfer fee is debited on top. PIN required. */
+export const WalletWithdrawReqSchema = z.object({
+  amountMinor: z.number().int().positive(),
+  pin: z.string(),
+});
+export type WalletWithdrawReq = z.infer<typeof WalletWithdrawReqSchema>;
+
+export const WalletWithdrawResSchema = z.object({
+  withdrawalId: z.string(),
+  status: z.string(),
+  amountMinor: z.number().int(),
+  feeMinor: z.number().int(),
+});
+export type WalletWithdrawRes = z.infer<typeof WalletWithdrawResSchema>;

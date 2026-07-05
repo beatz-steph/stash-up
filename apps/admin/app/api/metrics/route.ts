@@ -28,6 +28,7 @@ export async function GET() {
       failedPayouts,
       inboundAgg,
       payoutAgg,
+      walletAgg,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { blockedFromCircles: true } }),
@@ -55,6 +56,9 @@ export async function GET() {
         _count: { _all: true },
         _sum: { amountMinor: true },
       }),
+      // Wallet liabilities = money we hold on users' behalf in the shared
+      // sub-account. Part of the recon identity (available ≥ pots + buffers + wallets).
+      prisma.walletAccount.aggregate({ _count: { _all: true }, _sum: { balanceMinor: true } }),
     ])
 
     const data = {
@@ -90,6 +94,10 @@ export async function GET() {
           count: payoutAgg._count._all,
           valueMinor: payoutAgg._sum.amountMinor ?? 0,
         },
+      },
+      wallet: {
+        accounts: walletAgg._count._all,
+        liabilitiesMinor: walletAgg._sum.balanceMinor ?? 0,
       },
     }
 

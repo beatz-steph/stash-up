@@ -17,6 +17,7 @@ import { cardFeeOn } from "@/lib/fees"
 import type { WalletLedgerEntryDto } from "@/app/api/wallet/dto/wallet.dto"
 import { useWallet } from "../queries"
 import { useProvisionWalletAccount, useTopupWalletByCard } from "../mutations"
+import { WithdrawDialog } from "./withdraw-dialog"
 
 const SOURCE_LABEL: Record<string, string> = {
   TOPUP_BANK: "Bank top-up",
@@ -97,12 +98,19 @@ export function WalletCard() {
         ) : (
           <>
             <div className="rounded-su-lg bg-su-surface-muted px-4 py-4">
-              <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
-                Available balance
-              </span>
-              <p className="mt-1 font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
-                {formatNaira(wallet?.balanceMinor ?? 0)}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="font-su-sans text-su-caption-sm uppercase tracking-wider text-su-muted">
+                    Available balance
+                  </span>
+                  <p className="mt-1 font-su-mono text-su-title-lg font-bold text-su-ink [font-feature-settings:'tnum']">
+                    {formatNaira(wallet?.balanceMinor ?? 0)}
+                  </p>
+                </div>
+                {(wallet?.balanceMinor ?? 0) > 0 ? (
+                  <WithdrawDialog balanceMinor={wallet?.balanceMinor ?? 0} />
+                ) : null}
+              </div>
             </div>
 
             {/* Card top-up — user pays amount + card fee, wallet gets the amount */}
