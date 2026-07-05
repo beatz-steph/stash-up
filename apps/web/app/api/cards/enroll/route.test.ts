@@ -60,11 +60,12 @@ describe("POST /api/cards/enroll", () => {
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(data.mode).toBe("contribution");
-    expect(data.amountMinor).toBe(400_000);
+    // Grossed up so the NET after Nomba's card fee covers the ₦4,000 owed.
+    expect(data.amountMinor).toBe(405_680); // ceil(400000 / (1 − 0.014))
 
     const orderArg = vi.mocked(createCheckoutOrder).mock.calls[0]![0];
     expect(orderArg.tokenizeCard).toBe(true);
-    expect(orderArg.amountMinor).toBe(400_000);
+    expect(orderArg.amountMinor).toBe(405_680);
     expect(orderArg.metadata?.kind).toBe("cardenroll");
     expect(prisma.chargeAttempt.upsert).toHaveBeenCalled();
   });

@@ -72,7 +72,8 @@ describe("POST /api/circles/[id]/auto-debit", () => {
       data: { autoDebitCardId: "card1" },
     });
     const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
-    expect(chargeArg.amountMinor).toBe(750_000);
+    // Grossed up so the NET after Nomba's card fee covers the ₦7,500 owed.
+    expect(chargeArg.amountMinor).toBe(760_650); // ceil(750000 / (1 − 0.014))
     expect(chargeArg.tokenKey).toBe("SECRET");
   });
 

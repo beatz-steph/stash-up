@@ -194,6 +194,7 @@ export async function dispatchWebhookEvent(
 
       let payoutRecipientId: string | null = null;
       let amountMinor = 0;
+      let feeMinor = 0;
       let payoutCircleName = "";
 
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -208,6 +209,7 @@ export async function dispatchWebhookEvent(
 
         payoutRecipientId = payout.cycle.recipientMembership.userId;
         amountMinor = payout.amountMinor;
+        feeMinor = payout.feeMinor;
         payoutCircleName = payout.cycle.circle.name;
 
         await tx.payout.update({
@@ -244,6 +246,9 @@ export async function dispatchWebhookEvent(
               react: PayoutReceivedEmail({
                 amount: formatNaira(amountMinor),
                 circleName: payoutCircleName,
+                ...(feeMinor > 0
+                  ? { fee: formatNaira(feeMinor), gross: formatNaira(amountMinor + feeMinor) }
+                  : {}),
               }),
             });
           }

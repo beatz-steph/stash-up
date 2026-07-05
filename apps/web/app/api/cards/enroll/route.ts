@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { requireCircleMember, requireVerifiedEmail } from "@/lib/access-control";
 import { createCheckoutOrder } from "@/lib/nomba-client";
+import { grossUpForCardFee } from "@/lib/fees";
 import {
   VERIFICATION_AMOUNT_MINOR,
   computeRemainingDue,
@@ -86,7 +87,12 @@ export async function POST(req: Request) {
       !!currentCycle && shouldCollectNow(currentCycle.status, remainingDue);
 
     const nonce = randomUUID();
-    const amountMinor = contributionMode ? remainingDue : VERIFICATION_AMOUNT_MINOR;
+    // Contribution charges are grossed-up so the NET (after Nomba's card fee)
+    // covers the full contribution — the member pays the surfaced fee, the pot
+    // still receives the whole amount. Verification stays a flat ₦50 hold.
+    const amountMinor = contributionMode
+      ? grossUpForCardFee(remainingDue)
+      : VERIFICATION_AMOUNT_MINOR;
     const orderReference = contributionMode
       ? enrollOrderRef(currentCycle!.id, membership.id, nonce)
       : verifyOrderRef(userId, nonce);

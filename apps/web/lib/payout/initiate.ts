@@ -3,6 +3,7 @@ import { acquirePayoutLock, releasePayoutLock } from "@/lib/redis";
 import { initiateSubAccountBankTransfer } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 import { payoutNarration } from "@/lib/nomba-format";
+import { transferFeeMinor } from "@/lib/fees";
 
 export async function initiatePayout(cycleId: string): Promise<void> {
   const locked = await acquirePayoutLock(cycleId);
@@ -15,7 +16,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
 
     // ── CLAIM TX ── returns the values the Nomba call needs, so nothing is read
     // through a non-null assertion on an outer `let` after the transaction.
-    const { amountMinor, wa, narration } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const { netMinor, wa, narration } = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const cycle = await tx.cycle.findUnique({
         where: { id: cycleId },
         include: { recipientMembership: true, circle: { select: { name: true } } },
@@ -38,12 +39,18 @@ export async function initiatePayout(cycleId: string): Promise<void> {
         throw new Error("Recipient has no withdrawal account");
       }
 
+      // Surface the transfer fee — the business absorbs nothing. The pot funds
+      // amount + fee; the recipient receives the net (pot − fee).
+      const feeMinor = transferFeeMinor(cycle.potExpectedMinor);
+      const payoutNetMinor = cycle.potExpectedMinor - feeMinor;
+
       try {
         await tx.payout.create({
           data: {
             cycleId,
             recipientMembershipId: cycle.recipientMembershipId,
-            amountMinor: cycle.potExpectedMinor,
+            amountMinor: payoutNetMinor,
+            feeMinor,
             merchantTxRef,
             recipientAccountNumber: withdrawalAccount.accountNumber,
             recipientBankCode: withdrawalAccount.bankCode,
@@ -65,7 +72,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
       });
 
       return {
-        amountMinor: cycle.potExpectedMinor,
+        netMinor: payoutNetMinor,
         wa: withdrawalAccount,
         narration: payoutNarration(cycle.circle.name, cycle.sequence),
       };
@@ -78,7 +85,7 @@ export async function initiatePayout(cycleId: string): Promise<void> {
 
     try {
       const res = await initiateSubAccountBankTransfer({
-        amount: amountMinor / 100, // naira
+        amount: netMinor / 100, // naira — recipient receives pot minus the fee
         accountNumber: wa.accountNumber,
         accountName: wa.accountName,
         bankCode: wa.bankCode,

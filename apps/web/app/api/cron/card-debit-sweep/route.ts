@@ -12,6 +12,7 @@ import {
   computeNextAttempt,
   chargeOrderRef,
 } from "@/lib/cards/enrollment";
+import { grossUpForCardFee } from "@/lib/fees";
 import { collectFromWallet } from "@/lib/wallet/waterfall";
 
 const VERIFY_STALE_MINUTES = 30;
@@ -142,6 +143,8 @@ export async function POST(request: Request) {
       }
 
       const orderReference = chargeOrderRef(cycle.id, m.id, attemptNumber);
+      // Gross up so the NET (after Nomba's card fee) covers the contribution.
+      const chargeMinor = grossUpForCardFee(remainingDue);
       const attempt = await prisma.chargeAttempt.create({
         data: {
           cycleId: cycle.id,
@@ -149,7 +152,7 @@ export async function POST(request: Request) {
           userId: m.user.id,
           savedCardId: card.id,
           purpose: "CONTRIBUTION",
-          amountMinor: remainingDue,
+          amountMinor: chargeMinor,
           orderReference,
           attemptNumber,
           status: "PENDING",
@@ -160,7 +163,7 @@ export async function POST(request: Request) {
         await chargeTokenizedCard({
           orderReference,
           customerEmail: m.user.email,
-          amountMinor: remainingDue,
+          amountMinor: chargeMinor,
           tokenKey: card.tokenKey,
           metadata: {
             kind: "cardchg",

@@ -534,6 +534,24 @@ export function CircleDetail({ circleId }: { circleId: string }) {
                                 {payoutStatus}
                               </span>
                             </div>
+                            {circle.currentCycle.payout && (
+                              <>
+                                <div className="flex justify-between items-center">
+                                  <span className="font-su-sans text-su-caption text-su-muted">Amount sent</span>
+                                  <span className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+                                    {formatNaira(circle.currentCycle.payout.amountMinor)}
+                                  </span>
+                                </div>
+                                {circle.currentCycle.payout.feeMinor > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-su-sans text-su-caption text-su-muted">Transfer fee</span>
+                                    <span className="font-su-sans text-su-caption text-su-muted">
+                                      −{formatNaira(circle.currentCycle.payout.feeMinor)}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
                             {circle.currentCycle.payout?.failureReason && (
                               <p className="font-su-sans text-su-caption text-su-semantic-down">
                                 {circle.currentCycle.payout.failureReason}

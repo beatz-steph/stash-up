@@ -98,7 +98,8 @@ describe("waterfall — wallet first, card for the remainder", () => {
     expect(data.walletCollected).toBe(1);
     expect(data.charged).toBe(1);
     const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
-    expect(chargeArg.amountMinor).toBe(600_000); // only the remainder
+    // Only the remainder, grossed up for the card fee: ceil(600000 / (1 − 0.014)).
+    expect(chargeArg.amountMinor).toBe(608_520);
   });
 
   it("wallet covers the whole contribution → no card charge", async () => {
@@ -126,10 +127,11 @@ describe("charge sweep — THE CORE RULE", () => {
     expect(data.charged).toBe(1);
 
     const createArg = vi.mocked(prisma.chargeAttempt.create).mock.calls[0]![0];
-    expect(createArg.data.amountMinor).toBe(400_000);
+    // ₦4,000 owed, grossed up for the card fee: ceil(400000 / (1 − 0.014)).
+    expect(createArg.data.amountMinor).toBe(405_680);
     expect(createArg.data.attemptNumber).toBe(1);
     const chargeArg = vi.mocked(chargeTokenizedCard).mock.calls[0]![0];
-    expect(chargeArg.amountMinor).toBe(400_000);
+    expect(chargeArg.amountMinor).toBe(405_680);
     expect(chargeArg.tokenKey).toBe("TK");
   });
 

@@ -108,15 +108,17 @@ describe("initiatePayout", () => {
     expect(initiateSubAccountBankTransfer).not.toHaveBeenCalled();
   });
 
-  it("happy path: snapshots potExpectedMinor, converts kobo to naira, flips cycle, records transfer id", async () => {
+  it("happy path: surfaces the transfer fee, sends the net in naira, flips cycle, records transfer id", async () => {
     await initiatePayout("cy-1");
 
-    // Payout row snapshots the contracted amount + withdrawal account details
+    // Payout row records the NET sent (pot − fee) + the surfaced fee.
+    // Pot ₦10,000 (1,000,000 kobo) → tier-2 fee ₦25 (2,500) → net 997,500.
     expect(prisma.payout.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           cycleId: "cy-1",
-          amountMinor: 1000000,
+          amountMinor: 997500,
+          feeMinor: 2500,
           merchantTxRef: "payout_cy-1",
           recipientAccountNumber: "0123456789",
           recipientBankCode: "058",
@@ -133,10 +135,10 @@ describe("initiatePayout", () => {
       }),
     );
 
-    // Nomba gets naira (kobo / 100) and the deterministic idempotency key
+    // Nomba gets the NET in naira (997,500 kobo / 100) and the deterministic key
     expect(initiateSubAccountBankTransfer).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 10000,
+        amount: 9975,
         merchantTxRef: "payout_cy-1",
         accountNumber: "0123456789",
         bankCode: "058",

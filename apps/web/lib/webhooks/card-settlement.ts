@@ -108,13 +108,18 @@ export async function handleCardSettlement(
     return;
   }
 
-  // cardenroll / cardchg — money applies to the cycle's pot.
+  // cardenroll / cardchg — money applies to the cycle's pot. Apply the NET that
+  // actually landed (gross charge − Nomba fee); the charge was grossed-up so the
+  // net ≈ the intended contribution. The fee is surfaced, never applied to a pot.
+  const feeMinor = Math.round(Number(transaction?.fee ?? 0) * 100);
+  const netMinor = Math.max(0, amountMinor - feeMinor);
   await settleContribution(attempt, kind, {
     tokenKey,
     last4,
     cardType,
     nombaTxId,
-    amountMinor,
+    netMinor,
+    feeMinor,
     currency: order?.currency ?? "NGN",
     time: transaction?.time,
   });
@@ -201,7 +206,8 @@ async function settleContribution(
     last4: string | null;
     cardType: string | null;
     nombaTxId: string;
-    amountMinor: number;
+    netMinor: number; // amount that landed in the sub-account (applied to the pot)
+    feeMinor: number; // surfaced Nomba card fee (never applied to a pot)
     currency: string;
     time?: string;
   }
@@ -243,7 +249,7 @@ async function settleContribution(
       : null,
   };
 
-  const result = matchInboundTransfer(data.amountMinor, "card", ctx);
+  const result = matchInboundTransfer(data.netMinor, "card", ctx);
   const eligible = result.decision !== "UNKNOWN_VA" && result.decision !== "UNMATCHED";
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -259,7 +265,8 @@ async function settleContribution(
           // first wins; the other hits this unique and no-ops.
           providerEventId: `card_${attempt.id}`,
           nombaTransactionId: data.nombaTxId,
-          amountMinor: data.amountMinor,
+          amountMinor: data.netMinor,
+          feeMinor: data.feeMinor,
           currency: data.currency,
           narration: kind === "cardenroll" ? "Card enrollment" : "Card auto-save",
           matchStatus: eligible
@@ -301,6 +308,7 @@ async function settleContribution(
         status: "SUCCESS",
         savedCardId,
         nombaTransactionId: data.nombaTxId,
+        feeMinor: data.feeMinor,
         settledAt: new Date(),
       },
     });
@@ -312,7 +320,7 @@ async function settleContribution(
       // money is never lost; it becomes carried-over credit (race acceptance).
       await tx.membership.update({
         where: { id: membership.id },
-        data: { bufferMinor: { increment: data.amountMinor } },
+        data: { bufferMinor: { increment: data.netMinor } },
       });
     }
   });

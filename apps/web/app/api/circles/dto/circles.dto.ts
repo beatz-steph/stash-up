@@ -65,7 +65,8 @@ export const CycleDetailSchema = z.object({
   payout: z.object({
     id: z.string(),
     status: z.string(),
-    amountMinor: z.number().int(),
+    amountMinor: z.number().int(), // net sent to the recipient (pot − fee)
+    feeMinor: z.number().int(), // surfaced transfer fee
     failureReason: z.string().nullable().optional(),
   }).nullable().optional(),
 });

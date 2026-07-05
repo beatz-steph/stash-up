@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@workspace/db";
 import { requireCircleMember, requireVerifiedEmail } from "@/lib/access-control";
 import { chargeTokenizedCard } from "@/lib/nomba-client";
+import { grossUpForCardFee } from "@/lib/fees";
 import {
   MAX_ATTEMPTS,
   computeRemainingDue,
@@ -122,6 +123,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       if (attemptNumber <= MAX_ATTEMPTS) {
         const orderReference = chargeOrderRef(currentCycle.id, membership.id, attemptNumber);
+        // Gross up so the NET (after Nomba's card fee) covers the contribution.
+        const chargeMinor = grossUpForCardFee(remainingDue);
         const attempt = await prisma.chargeAttempt.create({
           data: {
             cycleId: currentCycle.id,
@@ -129,7 +132,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             userId,
             savedCardId: card.id,
             purpose: "CONTRIBUTION",
-            amountMinor: remainingDue,
+            amountMinor: chargeMinor,
             orderReference,
             attemptNumber,
             status: "PENDING",
@@ -140,7 +143,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           await chargeTokenizedCard({
             orderReference,
             customerEmail: session.user.email,
-            amountMinor: remainingDue,
+            amountMinor: chargeMinor,
             tokenKey: card.tokenKey,
             metadata: {
               kind: "cardchg",

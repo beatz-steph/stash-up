@@ -225,6 +225,30 @@ describe("handleCardSettlement — enrollment", () => {
     expect(tx.savedCard.create).not.toHaveBeenCalled();
     expect(tx.contribution.upsert).toHaveBeenCalled();
   });
+
+  it("applies the NET (gross − fee) to the pot and records the surfaced fee", async () => {
+    // Grossed-up ₦10,142 charge; Nomba takes a ₦142 fee → exactly ₦10,000 lands.
+    const feeBearing = enrollPayload("cardchg");
+    feeBearing.data!.transaction!.transactionAmount = 10142;
+    (feeBearing.data!.transaction as { fee?: number }).fee = 142;
+
+    await handleCardSettlement(receipt, feeBearing);
+
+    // InboundTransfer records the NET applied (1,000,000) + the fee (14,200) —
+    // never the gross, so the fee portion we never received can't inflate a pot.
+    expect(tx.inboundTransfer.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amountMinor: 1_000_000,
+          feeMinor: 14_200,
+          matchStatus: "MATCHED",
+        }),
+      })
+    );
+    expect(tx.chargeAttempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ feeMinor: 14_200 }) })
+    );
+  });
 });
 
 describe("handleCardSettlement — guards", () => {

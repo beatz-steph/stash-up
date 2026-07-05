@@ -114,6 +114,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             id: currentCycle.payout.id,
             status: currentCycle.payout.status,
             amountMinor: currentCycle.payout.amountMinor,
+            feeMinor: currentCycle.payout.feeMinor,
             failureReason: currentCycle.payout.failureReason,
           } : null,
         }
