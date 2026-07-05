@@ -13,12 +13,14 @@ import {
   triggerPayout,
   renewCircle,
   payCircleNow,
+  sweepCircleCredit,
   type CreateCircleInput,
   type InviteInput,
 } from "@/lib/api/data/circles"
 import type { PayNowReq } from "@/app/api/circles/[id]/pay-now/dto/pay-now.dto"
 import { CIRCLE_QUERY_KEYS } from "../queries"
 import { WALLET_QUERY_KEYS } from "@/features/wallet/queries"
+import { formatNaira } from "@/lib/money"
 
 export function useActivateCircle(circleId: string) {
   const queryClient = useQueryClient()
@@ -198,6 +200,22 @@ export function usePayCircleNow(circleId: string) {
     },
     onError: (error) => {
       toast.error(error.message || "Could not complete the payment")
+    },
+  })
+}
+
+/** Move leftover circle credit to the wallet (completed circles). */
+export function useSweepCircleCredit(circleId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => sweepCircleCredit(circleId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: CIRCLE_QUERY_KEYS.detail(circleId) })
+      queryClient.invalidateQueries({ queryKey: WALLET_QUERY_KEYS.all })
+      toast.success(`${formatNaira(res.creditedMinor)} moved to your wallet`)
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not move your credit")
     },
   })
 }

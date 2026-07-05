@@ -1,7 +1,7 @@
 "use client"
 
 import { useCircleDetail, useVirtualAccount } from "../queries"
-import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle } from "../mutations"
+import { useCancelCircle, useLeaveCircle, useCancelInvite, useActivateCircle, useRetryProvisioning, useTriggerPayout, useRenewCircle, useSweepCircleCredit } from "../mutations"
 import { InviteMemberDialog } from "./invite-member-form"
 import { CycleHistory } from "./cycle-history"
 import { PayNowDialog } from "./pay-now-dialog"
@@ -95,6 +95,7 @@ export function CircleDetail({ circleId }: { circleId: string }) {
   const { mutate: retryProvisioning, isPending: isRetrying } = useRetryProvisioning(circleId)
   const { mutate: triggerPayout, isPending: isTriggeringPayout } = useTriggerPayout(circleId)
   const { mutate: renewCircle, isPending: isRenewing } = useRenewCircle(circleId)
+  const { mutate: sweepCredit, isPending: isSweeping } = useSweepCircleCredit(circleId)
 
   const { data: vaData } = useVirtualAccount(circleId)
 
@@ -484,6 +485,33 @@ export function CircleDetail({ circleId }: { circleId: string }) {
               The creator can start another rotation any time.
             </p>
           )}
+        </section>
+      )}
+
+      {/* Leftover credit on a finished circle — normally auto-swept at
+          completion; this covers a payment that settled afterwards. */}
+      {!isActive && !isForming && myBufferMinor > 0 && (
+        <section className="flex flex-col gap-4 rounded-su-xl border border-su-primary/30 bg-su-primary/[0.04] p-su-lg sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-su-sans text-su-body-sm font-semibold text-su-ink">
+              You have{" "}
+              <span className="font-su-mono text-su-semantic-up [font-feature-settings:'tnum']">
+                {formatNaira(myBufferMinor)}
+              </span>{" "}
+              in leftover credit
+            </p>
+            <p className="font-su-sans text-su-caption text-su-muted">
+              This circle has finished — move it to your wallet to spend or withdraw it.
+            </p>
+          </div>
+          <Button
+            className="rounded-su-pill"
+            onClick={() => sweepCredit()}
+            disabled={isSweeping}
+          >
+            {isSweeping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Move to wallet
+          </Button>
         </section>
       )}
 
