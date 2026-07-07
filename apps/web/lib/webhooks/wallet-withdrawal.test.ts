@@ -84,7 +84,7 @@ describe("handleWalletWithdrawalFailed", () => {
       id: "wd2",
       status: "INITIATED",
       amountMinor: 500_000,
-      feeMinor: 2_500,
+      feeMinor: 2_000,
       wallet: { userId: "u1" },
     });
     await handleWalletWithdrawalFailed("walletwd_2", "insufficient_funds");
@@ -98,7 +98,7 @@ describe("handleWalletWithdrawalFailed", () => {
       tx,
       expect.objectContaining({
         userId: "u1",
-        amountMinor: 502_500, // amount + fee
+        amountMinor: 502_000, // amount + fee
         source: "REVERSAL",
         idempotencyKey: "rev_wd2",
       })
