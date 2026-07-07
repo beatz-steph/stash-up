@@ -1,23 +1,23 @@
 import { prisma } from "@workspace/db";
 import { apiSuccess, apiError } from "@/lib/api/response";
-import { listVirtualAccountTransactions, nairaToKobo } from "@/lib/nomba-client";
+import { listSubAccountTransactions, nairaToKobo } from "@/lib/nomba-client";
 import { isNombaIntegrationDisabled } from "@/lib/nomba-config";
 
-// Second-granularity key for the amount+timestamp dedup fallback (in case the
-// list endpoint's `id` doesn't match the webhook's stored nombaTransactionId).
-function amountTimeKey(amountMinor: number, at: Date): string {
-  return `${amountMinor}|${Math.floor(at.getTime() / 1000)}`;
-}
+// Transaction types that represent money entering the sub-account.
+const CREDIT_TYPES = new Set(["vact_transfer", "online_checkout", "purchase", "qrt_credit"]);
+
+// Transaction types that represent money leaving (outbound) — skip these.
+const DEBIT_TYPES = new Set(["withdrawal", "transfer", "p2p"]);
 
 /**
- * Orphan spool: pull recent CREDITs from Nomba's virtual-account transaction
- * history for every provisioned VA and record any we have no InboundTransfer
- * for (a missed/undelivered webhook). Triggered on an interval by an external
- * scheduler (Railway) with the CRON_SECRET bearer.
+ * Orphan spool: pull ALL transactions from Nomba's sub-account feed and record
+ * any successful credits we have no InboundTransfer or ChargeAttempt for (a
+ * missed/undelivered webhook). Covers both VA bank transfers AND card checkout
+ * payments. Triggered on an interval by an external scheduler with CRON_SECRET.
  *
- * Idempotent: dedups against existing InboundTransfer (by nombaTransactionId,
- * with an amount+timestamp fallback) and existing OrphanTransaction rows, and
- * the OrphanTransaction.nombaTransactionId unique constraint backstops races.
+ * Idempotent: dedups against existing InboundTransfer (by nombaTransactionId),
+ * ChargeAttempt (by orderReference/merchantTxRef), existing OrphanTransaction
+ * rows, and the OrphanTransaction.nombaTransactionId unique constraint.
  */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -30,103 +30,123 @@ export async function POST(request: Request) {
     return apiError("Nomba integration is disabled", 503);
   }
 
-  // Window: last N hours (default 48). Generous overlap is fine — dedup handles it.
-  const url = new URL(request.url);
-  const hours = Math.min(Math.max(Number(url.searchParams.get("hours")) || 48, 1), 168);
-  const to = new Date();
-  const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
-  const fromIso = from.toISOString();
-  const toIso = to.toISOString();
+  // ── 1. Fetch ALL transactions from Nomba's sub-account feed ──
+  let allTx;
+  try {
+    allTx = await listSubAccountTransactions();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[orphan-spool] listSubAccountTransactions failed:", msg);
+    return apiError(`List failed: ${msg}`, 502);
+  }
 
-  // Only CIRCLE VAs: orphans are unattributed CONTRIBUTIONS, and the admin
-  // replay assumes a membership. WALLET VAs (top-ups) are out of scope here —
-  // a missed wallet top-up is recovered via Nomba dashboard re-push (v1).
-  const vas = await prisma.virtualAccount.findMany({
-    where: { status: "ACTIVE", kind: "CIRCLE" },
-    select: { id: true, bankAccountNumber: true },
+  // ── 2. Filter to successful credits only ──
+  const credits = allTx.filter((tx) => {
+    if (tx.status !== "SUCCESS") return false;
+    const type = tx.type ?? "";
+    if (DEBIT_TYPES.has(type)) return false;
+    // Accept known credit types, and also accept unknown types that aren't debits
+    // (defensive: Nomba may add new credit types)
+    return CREDIT_TYPES.has(type) || !DEBIT_TYPES.has(type);
   });
 
-  let creditsSeen = 0;
+  if (credits.length === 0) {
+    return apiSuccess({
+      totalFromNomba: allTx.length,
+      creditsSeen: 0,
+      orphansInserted: 0,
+      outboundSkipped: allTx.length,
+    });
+  }
+
+  // ── 3. Build dedup sets from our DB ──
+  const [existingInbound, existingChargeAttempts, existingOrphans] = await Promise.all([
+    prisma.inboundTransfer.findMany({
+      select: { nombaTransactionId: true },
+    }),
+    prisma.chargeAttempt.findMany({
+      where: { status: "SUCCESS" },
+      select: { orderReference: true, nombaTransactionId: true },
+    }),
+    prisma.orphanTransaction.findMany({
+      select: { nombaTransactionId: true },
+    }),
+  ]);
+
+  const inboundTxIds = new Set(existingInbound.map((t) => t.nombaTransactionId));
+  const chargeOrderRefs = new Set(existingChargeAttempts.map((c) => c.orderReference));
+  const chargeNombaTxIds = new Set(
+    existingChargeAttempts
+      .map((c) => c.nombaTransactionId)
+      .filter((id): id is string => id != null)
+  );
+  const orphanTxIds = new Set(existingOrphans.map((o) => o.nombaTransactionId));
+
+  // ── 3.5 Look up Virtual Accounts for these transactions ──
+  // If we have VAs in the payload, let's map them so we can link orphans to the correct VA and Member!
+  const accountNumbers = Array.from(
+    new Set(credits.map((c) => c.recipientAccountNumber).filter((n): n is string => Boolean(n)))
+  );
+  
+  const vactRecords = accountNumbers.length > 0 
+    ? await prisma.virtualAccount.findMany({
+        where: { bankAccountNumber: { in: accountNumbers } },
+        select: { id: true, bankAccountNumber: true },
+      })
+    : [];
+    
+  const vaMap = new Map(vactRecords.map((va) => [va.bankAccountNumber, va.id]));
+
+  // ── 4. Insert orphans for unmatched credits ──
   let orphansInserted = 0;
-  const errors: string[] = [];
 
-  for (const va of vas) {
-    let rows;
+  for (const credit of credits) {
+    // Skip if already recorded via webhook (InboundTransfer)
+    if (inboundTxIds.has(credit.id)) continue;
+
+    // Skip if card checkout already settled (ChargeAttempt)
+    if (credit.merchantTxRef && chargeOrderRefs.has(credit.merchantTxRef)) continue;
+    if (chargeNombaTxIds.has(credit.id)) continue;
+
+    // Skip if already spooled as orphan
+    if (orphanTxIds.has(credit.id)) continue;
+
+    const amountMinor = nairaToKobo(credit.amount);
+    const at = new Date(credit.timeCreated);
+    
+    // Resolve VA if present
+    const vaId = credit.recipientAccountNumber 
+      ? vaMap.get(credit.recipientAccountNumber) ?? null 
+      : null;
+
     try {
-      rows = await listVirtualAccountTransactions({
-        virtualAccount: va.bankAccountNumber,
-        from: fromIso,
-        to: toIso,
+      await prisma.orphanTransaction.create({
+        data: {
+          nombaTransactionId: credit.id,
+          virtualAccountId: vaId,
+          amountMinor,
+          entryType: credit.entryType ?? "CREDIT",
+          txType: credit.type ?? null,
+          senderName: credit.senderName ?? credit.source ?? "Unknown Sender",
+          narration: credit.gatewayMessage ?? credit.narration ?? null,
+          sessionId: credit.merchantTxRef ?? credit.rrn ?? credit.posTid ?? null,
+          transactionAt: at,
+        },
       });
+      orphanTxIds.add(credit.id); // prevent double-insert within this run
+      orphansInserted++;
     } catch (err) {
-      // Don't let one VA's failure abort the whole sweep.
-      errors.push(va.id);
-      console.error(
-        `[orphan-spool] list failed for VA ${va.id}:`,
-        err instanceof Error ? err.message : err
-      );
-      continue;
-    }
-
-    const credits = rows.filter(
-      (r) => (r.entryType ?? "").toUpperCase() === "CREDIT" && r.status === "SUCCESS"
-    );
-    if (credits.length === 0) continue;
-    creditsSeen += credits.length;
-
-    const [existingInbound, existingOrphans] = await Promise.all([
-      prisma.inboundTransfer.findMany({
-        where: { virtualAccountId: va.id },
-        select: { nombaTransactionId: true, amountMinor: true, receivedAt: true },
-      }),
-      prisma.orphanTransaction.findMany({
-        where: { virtualAccountId: va.id },
-        select: { nombaTransactionId: true },
-      }),
-    ]);
-
-    const inboundIds = new Set(existingInbound.map((t) => t.nombaTransactionId));
-    const inboundAmtTime = new Set(
-      existingInbound.map((t) => amountTimeKey(t.amountMinor, t.receivedAt))
-    );
-    const orphanIds = new Set(existingOrphans.map((o) => o.nombaTransactionId));
-
-    for (const credit of credits) {
-      const amountMinor = nairaToKobo(credit.amount);
-      const at = new Date(credit.timeCreated);
-
-      if (inboundIds.has(credit.id)) continue; // recorded via webhook (id match)
-      if (inboundAmtTime.has(amountTimeKey(amountMinor, at))) continue; // fallback match
-      if (orphanIds.has(credit.id)) continue; // already spooled
-
-      try {
-        await prisma.orphanTransaction.create({
-          data: {
-            nombaTransactionId: credit.id,
-            virtualAccountId: va.id,
-            amountMinor,
-            entryType: (credit.entryType ?? "CREDIT").toUpperCase(),
-            txType: credit.type ?? null,
-            senderName: credit.senderName ?? null,
-            narration: credit.narration ?? null,
-            sessionId: credit.sessionId ?? null,
-            transactionAt: at,
-          },
-        });
-        orphanIds.add(credit.id);
-        orphansInserted++;
-      } catch (err) {
-        if ((err as { code?: string }).code === "P2002") continue; // raced, already inserted
-        throw err;
-      }
+      if ((err as { code?: string }).code === "P2002") continue; // raced, already inserted
+      throw err;
     }
   }
 
+  const outboundSkipped = allTx.length - credits.length;
+
   return apiSuccess({
-    window: { from: fromIso, to: toIso },
-    virtualAccountsScanned: vas.length,
-    creditsSeen,
+    totalFromNomba: allTx.length,
+    creditsSeen: credits.length,
     orphansInserted,
-    listErrors: errors.length,
+    outboundSkipped,
   });
 }

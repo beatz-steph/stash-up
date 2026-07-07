@@ -51,6 +51,9 @@ describe("POST /api/cron/webhook-replay", () => {
       "PAYMENT_FAILED",
       "PAYOUT_SUCCESS",
       "PAYOUT_FAILED",
+      "ORDER_SUCCESS",
+      "PAYMENT_REVERSAL",
+      "PAYOUT_REFUND",
     ]);
 
     // ~6h window ending ~now.

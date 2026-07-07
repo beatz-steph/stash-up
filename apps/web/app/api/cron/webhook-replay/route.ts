@@ -26,6 +26,9 @@ const REPLAY_EVENT_TYPES = [
   "PAYMENT_FAILED",
   "PAYOUT_SUCCESS",
   "PAYOUT_FAILED",
+  "ORDER_SUCCESS",
+  "PAYMENT_REVERSAL",
+  "PAYOUT_REFUND",
 ] as const;
 
 export async function POST(request: Request) {
@@ -53,6 +56,8 @@ export async function POST(request: Request) {
       statuses: [...REPLAY_STATUSES],
       eventTypes: [...REPLAY_EVENT_TYPES],
     });
+
+    console.log(["webhook-replay"], result)
 
     return apiSuccess({
       window: { from: from.toISOString(), to: to.toISOString() },
