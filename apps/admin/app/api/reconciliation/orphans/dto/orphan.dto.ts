@@ -16,6 +16,7 @@ export const orphanListResponseSchema = z.object({
       narration: z.string().nullable(),
       transactionAt: z.date().or(z.string()),
       spooledAt: z.date().or(z.string()),
+      sessionId: z.string().nullable(),
       // Who the credit will/would land on (VA owner).
       member: z.object({
         membershipId: z.string(),
