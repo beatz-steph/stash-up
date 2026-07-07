@@ -4,9 +4,10 @@ import { requireAdmin } from "@/lib/access-control"
 import { paginationSchema, orphanListResponseSchema } from "./dto/orphan.dto"
 
 /**
- * PENDING orphans: credits spooled from Nomba's VA history that we have no
- * InboundTransfer for. Each maps to a member (the VA owner) so an admin can
- * replay it into their contribution/buffer or ignore it.
+ * PENDING orphans: credits spooled from Nomba's sub-account feed that we have
+ * no InboundTransfer or ChargeAttempt for (missed/failed webhooks). Covers both
+ * VA transfers and card checkouts. VA-originated orphans may have null
+ * virtualAccountId (global feed doesn't carry per-VA routing).
  */
 export async function GET(req: Request) {
   const { error } = await requireAdmin()
@@ -38,8 +39,15 @@ export async function GET(req: Request) {
         narration: true,
         transactionAt: true,
         spooledAt: true,
+        sessionId: true,
         virtualAccount: {
           select: {
+            kind: true,
+            walletAccount: {
+              select: {
+                user: { select: { name: true } },
+              },
+            },
             membership: {
               select: {
                 id: true,
@@ -56,17 +64,28 @@ export async function GET(req: Request) {
 
   const response = {
     items: orphans.map((o) => {
-      // Orphans are only spooled for CIRCLE VAs, so membership is present in
+      // Orphans are only spooled for CIRCLE VAs (or global account), so membership is present in
       // practice; fall back defensively for the now-nullable relation.
-      const m = o.virtualAccount.membership
+      const m = o.virtualAccount?.membership
+      const u = o.virtualAccount?.walletAccount?.user
       const { virtualAccount: _va, ...rest } = o
+      
+      const memberName = m?.user.name ?? u?.name ?? "Unknown"
+      const circleName = m?.circle.name ?? (o.virtualAccount?.kind === "WALLET" ? "Global Wallet" : "Unknown")
+      
+      let sender = o.senderName
+      if (!sender && o.txType === "online_checkout") {
+        sender = "Card Checkout (Email available on resolve)"
+      }
+
       return {
         ...rest,
+        senderName: sender,
         member: {
           membershipId: m?.id ?? "",
-          name: m?.user.name ?? "Unknown",
+          name: memberName,
           circleId: m?.circle.id ?? "",
-          circleName: m?.circle.name ?? "Unknown",
+          circleName: circleName,
         },
       }
     }),

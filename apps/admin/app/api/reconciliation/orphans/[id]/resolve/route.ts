@@ -36,6 +36,47 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const va = orphan.virtualAccount
+  const isCardCheckout = orphan.txType === "online_checkout"
+  const isWalletVa = va && va.kind === "WALLET" && !va.membershipId
+
+  if (!va || isWalletVa) {
+    if (isCardCheckout || isWalletVa) {
+      // Proxy to the web app to resolve to the user's global wallet
+      const webUrl = process.env.WEB_APP_URL || "http://localhost:3000"
+      const res = await fetch(`${webUrl}/api/internal/resolve-wallet-orphan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.CRON_SECRET || "test"}`,
+        },
+        body: JSON.stringify({
+          orphanId: orphan.id,
+          adminUserId: session.user.id,
+          note: note,
+        }),
+      })
+
+      let data;
+      try {
+        data = await res.json()
+      } catch (e) {
+        return NextResponse.json({ error: `Failed to resolve: received ${res.status} from web app proxy` }, { status: 502 })
+      }
+
+      if (!res.ok) {
+        return NextResponse.json({ error: data?.error || "Failed to resolve orphan to wallet" }, { status: res.status })
+      }
+
+      return NextResponse.json(data)
+    }
+
+    return NextResponse.json({ 
+      error: "This orphan was detected from the global sub-account feed and has no virtual account routing info. " +
+        "It cannot be auto-replayed into a member's contribution. " +
+        "Use 'Ignore' with a note, or trigger a Webhook Replay to recover the full event."
+    }, { status: 409 })
+  }
+
   const membership = va.membership
   // Orphans are only ever spooled for CIRCLE VAs (which have a membership).
   // Guard the now-nullable relation so a WALLET VA can never reach the
