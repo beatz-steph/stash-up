@@ -3,6 +3,8 @@ import { SignOutButton } from "@/components/sign-out-button"
 import { SidebarNav } from "@/components/sidebar-nav"
 import { getAdminSession } from "@/lib/session"
 
+import { IdleLogout } from "@/components/idle-logout"
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getAdminSession()
   if (!session) {
@@ -14,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex min-h-svh bg-su-surface-soft text-su-ink">
+      <IdleLogout />
       {/* Sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-su-hairline bg-su-canvas lg:flex">
         <div className="flex h-16 items-center gap-2.5 border-b border-su-hairline-soft px-6">
