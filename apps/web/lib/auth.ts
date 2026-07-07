@@ -73,7 +73,7 @@ export const auth = betterAuth({
         type: "WELCOME",
         title: "Welcome to StashUp 🎉",
         body: "Your email is verified. Add a withdrawal account to start a savings circle.",
-        link: "/",
+        link: "/dashboard",
       })
     },
   },

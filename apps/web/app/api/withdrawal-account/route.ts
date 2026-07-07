@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       type: "GENERIC",
       title: existing ? "Withdrawal account updated" : "Withdrawal account linked",
       body: `Payouts will be sent to your ${bankName} account.`,
-      link: "/",
+      link: "/dashboard",
     })
     
     return apiSuccess<WithdrawalAccount>(record)
