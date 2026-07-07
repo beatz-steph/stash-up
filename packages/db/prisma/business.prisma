@@ -284,8 +284,8 @@ model OrphanTransaction {
   id                  String       @id @default(cuid())
   provider            String       @default("NOMBA")
   nombaTransactionId  String       @unique   // list endpoint `id`
-  virtualAccountId    String
-  virtualAccount      VirtualAccount @relation(fields: [virtualAccountId], references: [id])
+  virtualAccountId    String?
+  virtualAccount      VirtualAccount? @relation(fields: [virtualAccountId], references: [id])
   amountMinor         Int                     // amount (naira) × 100
   currency            String       @default("NGN")
   entryType           String                  // e.g. CREDIT
