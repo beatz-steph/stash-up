@@ -61,3 +61,11 @@ pnpm test
 ### API
 - [Webhook Endpoint](./api/webhooks.md)
 - [REST API Structure](./api/README.md)
+
+## Related Workspaces
+
+- **[Root Repository README](../README.md)**
+- **[User Web App (`apps/web`)](../apps/web/README.md)**
+- **[Admin Dashboard (`apps/admin`)](../apps/admin/README.md)**
+- **[Database Layer (`packages/db`)](../packages/db/README.md)**
+- **[UI Library (`packages/ui`)](../packages/ui/README.md)**

@@ -40,3 +40,9 @@ the typed client in `lib/api/*` using `serverApiOptions()`. No analytics, no not
 - `lib/access-control.ts` — `requireAdmin` / `requireSuperAdmin` guards.
 - `lib/audit.ts` — `recordAudit`, called by every write action.
 - `scripts/seed.ts` — provision a `SUPER_ADMIN`.
+
+## Related Documentation
+
+- **[Root Repository README](../../README.md)**
+- **[User Web App (`apps/web`)](../web/README.md)**
+- **[Technical Documentation Hub](../../docs/README.md)**
