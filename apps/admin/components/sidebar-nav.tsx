@@ -10,7 +10,6 @@ import {
   Banknote,
   Webhook,
   ScrollText,
-  Settings,
   type LucideIcon,
 } from "lucide-react"
 
@@ -29,7 +28,6 @@ const NAV_ITEMS: NavItem[] = [
   { name: "Payouts", href: "/payouts", icon: Banknote },
   { name: "Webhooks", href: "/webhooks", icon: Webhook },
   { name: "Audit", href: "/audit", icon: ScrollText },
-  { name: "Settings", href: "/settings", icon: Settings, superAdminOnly: true },
 ]
 
 export function SidebarNav({ role }: { role: string }) {
