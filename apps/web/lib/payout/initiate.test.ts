@@ -112,13 +112,13 @@ describe("initiatePayout", () => {
     await initiatePayout("cy-1");
 
     // Payout row records the NET sent (pot − fee) + the surfaced fee.
-    // Pot ₦10,000 (1,000,000 kobo) → tier-2 fee ₦25 (2,500) → net 997,500.
+    // Pot ₦10,000 (1,000,000 kobo) → flat fee ₦20 (2,000) → net 998,000.
     expect(prisma.payout.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           cycleId: "cy-1",
-          amountMinor: 997500,
-          feeMinor: 2500,
+          amountMinor: 998000,
+          feeMinor: 2000,
           merchantTxRef: "payout_cy-1",
           recipientAccountNumber: "0123456789",
           recipientBankCode: "058",
@@ -138,7 +138,7 @@ describe("initiatePayout", () => {
     // Nomba gets the NET in naira (997,500 kobo / 100) and the deterministic key
     expect(initiateSubAccountBankTransfer).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 9975,
+        amount: 9980,
         merchantTxRef: "payout_cy-1",
         accountNumber: "0123456789",
         bankCode: "058",

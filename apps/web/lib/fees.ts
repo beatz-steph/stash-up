@@ -13,19 +13,12 @@ export const CARD_FEE_RATE = Number(
   process.env.NEXT_PUBLIC_NOMBA_CARD_FEE_RATE ?? process.env.NOMBA_CARD_FEE_RATE ?? "0.014"
 );
 
-// Nomba bank-transfer (payout) fee — tiered flat kobo amounts. Defaults follow
-// typical Nigerian PSP tiers; override via env once confirmed with Nomba.
-const TRANSFER_FEE_TIER1 = Number(process.env.NOMBA_TRANSFER_FEE_TIER1 ?? "1000"); // ≤ ₦5,000  → ₦10
-const TRANSFER_FEE_TIER2 = Number(process.env.NOMBA_TRANSFER_FEE_TIER2 ?? "2500"); // ≤ ₦50,000 → ₦25
-const TRANSFER_FEE_TIER3 = Number(process.env.NOMBA_TRANSFER_FEE_TIER3 ?? "5000"); // > ₦50,000 → ₦50
-const TRANSFER_TIER1_MAX = 500_000; // ₦5,000 in kobo
-const TRANSFER_TIER2_MAX = 5_000_000; // ₦50,000 in kobo
+// Nomba bank-transfer (payout) fee — flat ₦20. Overridable via env.
+const TRANSFER_FEE = Number(process.env.NOMBA_TRANSFER_FEE ?? "2000"); // ₦20
 
-/** Flat bank-transfer fee (kobo) for a payout/withdrawal of `amountMinor`. */
+/** Flat bank-transfer fee (kobo) for a payout/withdrawal. */
 export function transferFeeMinor(amountMinor: number): number {
-  if (amountMinor <= TRANSFER_TIER1_MAX) return TRANSFER_FEE_TIER1;
-  if (amountMinor <= TRANSFER_TIER2_MAX) return TRANSFER_FEE_TIER2;
-  return TRANSFER_FEE_TIER3;
+  return TRANSFER_FEE;
 }
 
 /**

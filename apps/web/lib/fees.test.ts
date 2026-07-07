@@ -6,14 +6,11 @@ import {
   cardFeeOn,
 } from "./fees";
 
-describe("transferFeeMinor (tiered flat bank-transfer fee)", () => {
-  it("applies the tier for the amount", () => {
-    expect(transferFeeMinor(100_000)).toBe(1000); // ₦1,000 → tier 1 (₦10)
-    expect(transferFeeMinor(500_000)).toBe(1000); // ₦5,000 boundary → tier 1
-    expect(transferFeeMinor(500_001)).toBe(2500); // just over → tier 2 (₦25)
-    expect(transferFeeMinor(5_000_000)).toBe(2500); // ₦50,000 boundary → tier 2
-    expect(transferFeeMinor(5_000_001)).toBe(5000); // over → tier 3 (₦50)
-    expect(transferFeeMinor(100_000_000)).toBe(5000);
+describe("transferFeeMinor (flat bank-transfer fee)", () => {
+  it("applies the flat fee regardless of the amount", () => {
+    expect(transferFeeMinor(100_000)).toBe(2000);
+    expect(transferFeeMinor(5_000_000)).toBe(2000);
+    expect(transferFeeMinor(100_000_000)).toBe(2000);
   });
 });
 

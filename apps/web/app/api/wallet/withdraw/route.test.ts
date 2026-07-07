@@ -106,7 +106,7 @@ describe("POST /api/wallet/withdraw", () => {
     const res = await POST(req({ amountMinor: 100_000, pin: "1234" })); // ₦1,000
     expect(res.status).toBe(200);
     const { data } = await res.json();
-    expect(data.feeMinor).toBe(1_000); // ₦10 tier-1 transfer fee
+    expect(data.feeMinor).toBe(2_000); // ₦20 flat transfer fee
     expect(data.amountMinor).toBe(100_000);
     expect(data.status).toBe("INITIATED");
 
@@ -115,7 +115,7 @@ describe("POST /api/wallet/withdraw", () => {
       tx,
       expect.objectContaining({
         userId: "u1",
-        amountMinor: 101_000,
+        amountMinor: 102_000,
         source: "WITHDRAWAL",
         idempotencyKey: "wd_wd1",
       })
