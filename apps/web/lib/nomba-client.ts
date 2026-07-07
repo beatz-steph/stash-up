@@ -383,9 +383,12 @@ export async function getSubAccountBalance() {
   }
 
   const data = await res.json();
+  const amountStr = data.data?.amount ?? "0";
+  const minor = Math.round(parseFloat(amountStr) * 100);
+
   return {
-    availableBalanceMinor: Math.round(data.data.availableBalance * 100),
-    ledgerBalanceMinor: Math.round(data.data.ledgerBalance * 100),
+    availableBalanceMinor: minor,
+    ledgerBalanceMinor: minor,
   };
 }
 
