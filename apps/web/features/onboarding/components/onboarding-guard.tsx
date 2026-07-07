@@ -10,7 +10,7 @@ export function OnboardingGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const isOnboarded = useIsOnboarded()
 
-  if (isOnboarded || pathname === "/") {
+  if (isOnboarded || pathname === "/" || pathname === "/dashboard") {
     return <>{children}</>
   }
 
