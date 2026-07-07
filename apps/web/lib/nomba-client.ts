@@ -458,6 +458,78 @@ export function nairaToKobo(amount: string | number): number {
   return Math.round(Number(amount) * 100);
 }
 
+// ─── Sub-Account Transactions (global feed) ──────────────────────────────────
+// GET /v1/transactions/accounts/{subAccountId} — every transaction across the
+// entire sub-account (VA transfers, card checkouts, outgoing transfers, etc.).
+// The response schema is lighter than /v1/transactions/virtual: no senderName,
+// entryType, or recipientAccountNumber. Used by orphan-spool for reconciliation.
+const SubAccountTxSchema = z
+  .object({
+    id: z.string(),
+    status: z.string(),
+    amount: z.union([z.string(), z.number()]),
+    source: z.string().optional(),
+    type: z.string().optional(),
+    gatewayMessage: z.string().optional(),
+    timeCreated: z.string(),
+    merchantTxRef: z.string().nullish(),
+    posTid: z.string().nullish(),
+    rrn: z.string().nullish(),
+    entryType: z.string().optional(),
+    senderName: z.string().nullish(),
+    recipientAccountNumber: z.string().nullish(),
+    virtualAccountReference: z.string().nullish(),
+  })
+  .passthrough();
+
+export type SubAccountTx = z.infer<typeof SubAccountTxSchema>;
+
+const SubAccountTxPageSchema = z.object({
+  cursor: z.string().optional().default(""),
+  results: z.array(SubAccountTxSchema).default([]),
+});
+
+/**
+ * Fetch ALL transactions on the sub-account. No date filters — the orphan-spool
+ * dedup logic handles overlap. Pages through the cursor (bounded by maxPages).
+ */
+export async function listSubAccountTransactions(params?: {
+  limit?: number;
+  maxPages?: number;
+}): Promise<SubAccountTx[]> {
+  const { limit = 100, maxPages = 20 } = params ?? {};
+  const rows: SubAccountTx[] = [];
+  let cursor = "";
+
+  for (let page = 0; page < maxPages; page++) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (cursor) qs.set("cursor", cursor);
+
+    const res = await nombaFetch(
+      `/v1/transactions/accounts/${SUB_ACCOUNT_ID}?${qs.toString()}`
+    );
+    if (!res.ok) {
+      throw new Error(
+        `List sub-account transactions failed: ${res.status} ${await res.text()}`
+      );
+    }
+
+    const data = await res.json();
+    const parsed = SubAccountTxPageSchema.safeParse(data?.data);
+    if (!parsed.success) {
+      throw new Error(
+        `List sub-account transactions parse failed: ${parsed.error.message}. Nomba response (code=${data?.code}): ${data?.description}`
+      );
+    }
+
+    rows.push(...parsed.data.results);
+    cursor = parsed.data.cursor;
+    if (!cursor) break;
+  }
+
+  return rows;
+}
+
 /**
  * List transactions on a single virtual account within a UTC date window.
  * Pages through the cursor and returns every row (bounded by maxPages so a
@@ -587,8 +659,53 @@ const CheckoutTransactionSchema = z
     fee: z.union([z.number(), z.string()]).nullish(),
     amount: z.union([z.number(), z.string()]).nullish(),
     transactionAmount: z.union([z.number(), z.string()]).nullish(),
+    customerEmail: z.string().nullish(),
   })
   .passthrough();
+
+export async function getCheckoutTransactionById(transactionId: string): Promise<{
+  settled: boolean;
+  status: string;
+  transactionId: string | null;
+  feeMinor: number | null;
+  amountMinor: number | null;
+  customerEmail: string | null;
+}> {
+  const qs = new URLSearchParams({ transactionId });
+  const res = await nombaFetch(
+    `/v1/transactions/accounts/single?${qs.toString()}`,
+    {},
+    { ref: transactionId }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Get checkout transaction by ID failed: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const parsed = CheckoutTransactionSchema.safeParse(data?.data);
+  if (!parsed.success) {
+    throw new Error(
+      `Get checkout transaction by ID: unexpected Nomba response (code=${data?.code ?? "?"}): ${
+        data?.description ?? "no data field"
+      }`
+    );
+  }
+
+  const toMinor = (v: number | string | null | undefined): number | null =>
+    v === null || v === undefined || v === "" ? null : Math.round(Number(v) * 100);
+  const grossMinor = toMinor(parsed.data.transactionAmount ?? parsed.data.amount);
+  const feeMinor = toMinor(parsed.data.fee);
+
+  return {
+    settled: parsed.data.status === "SUCCESS",
+    status: parsed.data.status,
+    transactionId: parsed.data.transactionId ?? parsed.data.id ?? null,
+    feeMinor,
+    amountMinor: grossMinor,
+    customerEmail: parsed.data.customerEmail ?? null,
+  };
+}
 
 /**
  * Verify a checkout transaction by our orderReference — the reconcile-sweep
